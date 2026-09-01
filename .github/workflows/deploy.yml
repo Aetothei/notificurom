@@ -1,0 +1,27 @@
+name: Deploy Notificurom
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  ansible-deploy:
+    runs-on:
+      - self-hosted
+      - incus
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Collection Dependencies
+        run: |
+          ansible-galaxy collection install -r requirements.yml --upgrade
+
+      - name: Run Ansible Playbook
+        env:
+          INCUS_HOST_IP: ${{ vars.INCUS_HOST_IP }}
+          INCUS_HOST_USER: ${{ vars.INCUS_HOST_USER }}
+        run: |
+          ansible-playbook -i inventory.yml playbook.yml

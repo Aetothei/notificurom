@@ -1,0 +1,5 @@
+---
+collections:
+  - name: git+https://github.com/Aetothei/redactum.git
+    type: git
+    version: main

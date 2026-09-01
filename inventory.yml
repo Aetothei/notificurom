@@ -1,0 +1,16 @@
+---
+all:
+  children:
+    incus_hosts:
+      hosts:
+        redactum:
+          ansible_host: "{{ lookup('ansible.builtin.env', 'INCUS_HOST_IP') }}"
+          ansible_user: "{{ lookup('ansible.builtin.env', 'INCUS_HOST_USER') | default('pythas', true) }}"
+          ansible_connection: ssh
+
+    arr_containers:
+      hosts:
+        notificurom:
+          ansible_connection: community.general.incus
+          ansible_incus_remote: redactum
+          ansible_user: root

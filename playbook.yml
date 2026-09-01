@@ -1,0 +1,82 @@
+---
+- name: Provision Notificurom Container on Incus host
+  hosts: incus_hosts
+  become: true
+  roles:
+    - role: redactum.core.incus_container
+      vars:
+        container_name: "notificurom"
+        container_cpu_limit: "2"
+        container_mem_limit: "1GiB"
+        container_profiles: ["arr"]
+        container_nesting: "true"
+
+- name: Configure and Deploy Notificurom Application
+  hosts: notificurom
+  vars:
+    notificurom_port: 3000
+    notificurom_data_dir: "/var/lib/notificurom"
+    notificurom_app_dir: "/opt/notificurom"
+  tasks:
+    - name: Install Docker prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - rsync
+        state: present
+        cache_valid_time: 3600
+
+    - name: Add Docker GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/debian/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker service is running
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Ensure data and app directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ notificurom_data_dir }}"
+        - "{{ notificurom_app_dir }}"
+
+    - name: Synchronize application files to container
+      ansible.posix.synchronize:
+        src: ./
+        dest: "{{ notificurom_app_dir }}/"
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=node_modules"
+          - "--exclude=.next"
+          - "--exclude=data"
+          - "--exclude=collections"
+
+    - name: Build and deploy Notificurom container via Docker Compose
+      ansible.builtin.command:
+        cmd: docker compose -f docker-compose.yml up -d --build
+        chdir: "{{ notificurom_app_dir }}"
+      changed_when: true
