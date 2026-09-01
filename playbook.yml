@@ -80,3 +80,12 @@
         cmd: docker compose -f docker-compose.yml up -d --build
         chdir: "{{ notificurom_app_dir }}"
       changed_when: true
+
+- name: Register Notificurom route in Caddy gateway
+  hosts: caddy
+  roles:
+    - role: redactum.core.caddy_route
+      vars:
+        service_name: notificurom
+        service_domain: "notificurom.i.pythas.se"
+        service_upstream: "notificurom.arr.incus:3000"
