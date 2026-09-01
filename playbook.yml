@@ -8,7 +8,7 @@
         container_name: "notificurom"
         container_cpu_limit: "2"
         container_mem_limit: "1GiB"
-        container_profiles: ["arr"]
+        container_profiles: ["default"]
         container_nesting: "true"
 
 - name: Configure and Deploy Notificurom Application
@@ -88,4 +88,4 @@
       vars:
         service_name: notificurom
         service_domain: "notificurom.i.pythas.se"
-        service_upstream: "notificurom.arr.incus:3000"
+        service_upstream: "notificurom.incus:3000"
