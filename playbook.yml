@@ -87,6 +87,17 @@
         src: "/tmp/notificurom_app.tar.gz"
         dest: "{{ notificurom_app_dir }}"
 
+    - name: Ensure data directory exists with ownership for nextjs user
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "1001"
+        group: "1001"
+        mode: "0775"
+      loop:
+        - "{{ notificurom_data_dir }}"
+        - "{{ notificurom_app_dir }}/data"
+
     - name: Build and deploy Notificurom container via Docker Compose
       ansible.builtin.command:
         cmd: docker compose -f docker-compose.yml up -d --build
@@ -99,5 +110,5 @@
     - role: redactum.core.caddy_route
       vars:
         service_name: notificurom
-        service_domain: "notificurom.i.pythas.se"
+        service_domain: "{{ lookup('ansible.builtin.env', 'APP_DOMAIN') }}"
         service_upstream: "notificurom.incus:3000"
