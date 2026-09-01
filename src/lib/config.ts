@@ -143,3 +143,25 @@ export async function saveAppConfig(config: Partial<AppConfig>): Promise<void> {
     await setSetting('sync_interval_mins', String(config.syncIntervalMinutes));
   }
 }
+
+export function getBaseUrl(req?: { headers: Headers; url?: string; nextUrl?: { origin: string } }): string {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL.replace(/\/$/, '');
+  }
+  if (req) {
+    const forwardedHost = req.headers.get('x-forwarded-host');
+    const forwardedProto = req.headers.get('x-forwarded-proto') || 'https';
+    if (forwardedHost) {
+      return `${forwardedProto}://${forwardedHost}`;
+    }
+    const host = req.headers.get('host');
+    if (host && !host.includes('0.0.0.0') && !host.includes('localhost') && !host.includes('.incus')) {
+      const proto = req.url?.startsWith('https') ? 'https' : 'http';
+      return `${proto}://${host}`;
+    }
+    if (req.nextUrl?.origin) {
+      return req.nextUrl.origin;
+    }
+  }
+  return 'http://localhost:3000';
+}

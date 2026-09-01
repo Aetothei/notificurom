@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getAppConfig, setGitHubAuth } from '@/lib/config';
+import { getAppConfig, setGitHubAuth, getBaseUrl } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const baseUrl = getBaseUrl(req);
   const searchParams = req.nextUrl.searchParams;
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
   if (error) {
     const errorMsg = errorDescription || error;
     return NextResponse.redirect(
-      new URL(`/?auth=error&error=${encodeURIComponent(errorMsg)}`, req.url)
+      new URL(`/?auth=error&error=${encodeURIComponent(errorMsg)}`, baseUrl)
     );
   }
 
@@ -24,13 +25,13 @@ export async function GET(req: NextRequest) {
 
   if (!state || !storedState || state !== storedState) {
     return NextResponse.redirect(
-      new URL('/?auth=error&error=invalid_state', req.url)
+      new URL('/?auth=error&error=invalid_state', baseUrl)
     );
   }
 
   if (!code) {
     return NextResponse.redirect(
-      new URL('/?auth=error&error=missing_code', req.url)
+      new URL('/?auth=error&error=missing_code', baseUrl)
     );
   }
 
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
 
     if (!clientId || !clientSecret) {
       return NextResponse.redirect(
-        new URL('/?auth=error&error=oauth_not_configured', req.url)
+        new URL('/?auth=error&error=oauth_not_configured', baseUrl)
       );
     }
 
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
 
     if (!tokenRes.ok) {
       return NextResponse.redirect(
-        new URL('/?auth=error&error=token_exchange_failed', req.url)
+        new URL('/?auth=error&error=token_exchange_failed', baseUrl)
       );
     }
 
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
     if (tokenData.error || !tokenData.access_token) {
       const errMsg = tokenData.error_description || tokenData.error || 'token_exchange_failed';
       return NextResponse.redirect(
-        new URL(`/?auth=error&error=${encodeURIComponent(errMsg)}`, req.url)
+        new URL(`/?auth=error&error=${encodeURIComponent(errMsg)}`, baseUrl)
       );
     }
 
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
 
     if (!userRes.ok) {
       return NextResponse.redirect(
-        new URL('/?auth=error&error=user_fetch_failed', req.url)
+        new URL('/?auth=error&error=user_fetch_failed', baseUrl)
       );
     }
 
@@ -100,11 +101,11 @@ export async function GET(req: NextRequest) {
       avatarUrl: userData.avatar_url || null,
     });
 
-    return NextResponse.redirect(new URL('/?auth=success', req.url));
+    return NextResponse.redirect(new URL('/?auth=success', baseUrl));
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Callback handling failed';
     return NextResponse.redirect(
-      new URL(`/?auth=error&error=${encodeURIComponent(message)}`, req.url)
+      new URL(`/?auth=error&error=${encodeURIComponent(message)}`, baseUrl)
     );
   }
 }

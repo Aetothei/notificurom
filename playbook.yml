@@ -99,6 +99,14 @@
         - "{{ notificurom_data_dir }}"
         - "{{ notificurom_app_dir }}/data"
 
+    - name: Configure .env for Docker Compose
+      ansible.builtin.copy:
+        dest: "{{ notificurom_app_dir }}/.env"
+        content: |
+          NODE_ENV=production
+          APP_URL=https://{{ lookup('ansible.builtin.env', 'APP_DOMAIN') }}
+        mode: "0600"
+
     - name: Build and deploy Notificurom container via Docker Compose
       ansible.builtin.command:
         cmd: docker compose -f docker-compose.yml up -d --build
