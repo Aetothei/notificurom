@@ -24,5 +24,6 @@ jobs:
           INCUS_HOST_IP: ${{ vars.INCUS_HOST_IP }}
           INCUS_HOST_USER: ${{ vars.INCUS_HOST_USER }}
           APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+          GH_CLIENT_ID: ${{ vars.GH_CLIENT_ID }}
         run: |
           ansible-playbook -i inventory.yml playbook.yml
