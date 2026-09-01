@@ -24,7 +24,7 @@
           - ca-certificates
           - curl
           - gnupg
-          - rsync
+          - tar
         state: present
         cache_valid_time: 3600
 
@@ -64,16 +64,28 @@
         - "{{ notificurom_data_dir }}"
         - "{{ notificurom_app_dir }}"
 
-    - name: Synchronize application files to container
-      ansible.posix.synchronize:
-        src: ./
-        dest: "{{ notificurom_app_dir }}/"
-        rsync_opts:
-          - "--exclude=.git"
-          - "--exclude=node_modules"
-          - "--exclude=.next"
-          - "--exclude=data"
-          - "--exclude=collections"
+    - name: Create tarball of application on runner
+      community.general.archive:
+        path:
+          - "{{ playbook_dir }}/src"
+          - "{{ playbook_dir }}/public"
+          - "{{ playbook_dir }}/package.json"
+          - "{{ playbook_dir }}/package-lock.json"
+          - "{{ playbook_dir }}/drizzle.config.ts"
+          - "{{ playbook_dir }}/drizzle"
+          - "{{ playbook_dir }}/Dockerfile"
+          - "{{ playbook_dir }}/docker-compose.yml"
+          - "{{ playbook_dir }}/next.config.ts"
+          - "{{ playbook_dir }}/tsconfig.json"
+          - "{{ playbook_dir }}/eslint.config.mjs"
+        dest: "/tmp/notificurom_app.tar.gz"
+        format: gz
+      delegate_to: localhost
+
+    - name: Extract application files into container
+      ansible.builtin.unarchive:
+        src: "/tmp/notificurom_app.tar.gz"
+        dest: "{{ notificurom_app_dir }}"
 
     - name: Build and deploy Notificurom container via Docker Compose
       ansible.builtin.command:
