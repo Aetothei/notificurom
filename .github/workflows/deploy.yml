@@ -25,5 +25,6 @@ jobs:
           INCUS_HOST_USER: ${{ vars.INCUS_HOST_USER }}
           APP_DOMAIN: ${{ vars.APP_DOMAIN }}
           GH_CLIENT_ID: ${{ vars.GH_CLIENT_ID }}
+          GH_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
         run: |
           ansible-playbook -i inventory.yml playbook.yml

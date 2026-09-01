@@ -106,6 +106,7 @@
           NODE_ENV=production
           APP_URL=https://{{ lookup('ansible.builtin.env', 'APP_DOMAIN') }}
           GITHUB_CLIENT_ID={{ lookup('ansible.builtin.env', 'GH_CLIENT_ID') | default('', true) }}
+          GITHUB_CLIENT_SECRET={{ lookup('ansible.builtin.env', 'GH_CLIENT_SECRET') | default('', true) }}
         mode: "0600"
 
     - name: Build and deploy Notificurom container via Docker Compose
