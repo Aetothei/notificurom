@@ -7,7 +7,7 @@
       vars:
         container_name: "notificurom"
         container_cpu_limit: "2"
-        container_mem_limit: "1GiB"
+        container_mem_limit: "3GiB"
         container_profiles: ["default"]
         container_nesting: "true"
 
