@@ -1,8 +1,10 @@
 import { db } from '@/db';
 import { tasks } from '@/db/schema';
-import { getAppConfig, getSetting } from '@/lib/config';
+import { getSystemConfig, getSetting } from '@/lib/config';
+import { getCurrentUser } from '@/lib/auth';
 import { Dashboard } from '@/components/Dashboard';
-import { asc, desc } from 'drizzle-orm';
+import { LandingPage } from '@/components/LandingPage';
+import { asc, desc, eq } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,30 +14,21 @@ interface PageProps {
 
 export default async function Home({ searchParams }: PageProps) {
   const params = await searchParams;
-  const allTasks = db
-    .select()
-    .from(tasks)
-    .orderBy(asc(tasks.sortOrder), desc(tasks.sourceCreatedAt))
-    .all();
+  const sysConfig = await getSystemConfig();
+  const authContext = await getCurrentUser();
 
-  const config = await getAppConfig();
-  const lastSyncTime = await getSetting('last_sync_time', '');
-
-  const isConnected = Boolean(
-    config.githubAccessToken && config.githubAccessToken.trim().length > 0
-  );
   const isConfigured = Boolean(
-    config.githubClientId &&
-    config.githubClientId.trim().length > 0 &&
-    config.githubClientSecret &&
-    config.githubClientSecret.trim().length > 0
+    sysConfig.githubClientId &&
+    sysConfig.githubClientId.trim().length > 0 &&
+    sysConfig.githubClientSecret &&
+    sysConfig.githubClientSecret.trim().length > 0
   );
 
   let initialBanner: { type: 'success' | 'error'; message: string } | null = null;
   if (params.auth === 'success') {
     initialBanner = {
       type: 'success',
-      message: 'Successfully connected to GitHub!',
+      message: 'Successfully signed in with GitHub!',
     };
   } else if (params.auth === 'error') {
     const errorMsg =
@@ -44,16 +37,42 @@ export default async function Home({ searchParams }: PageProps) {
       'Authentication failed';
     initialBanner = {
       type: 'error',
-      message: `GitHub connection failed: ${errorMsg}`,
+      message: `GitHub sign-in failed: ${errorMsg}`,
     };
   }
 
+  // If user is not authenticated, show modern landing & login view
+  if (!authContext) {
+    return (
+      <LandingPage
+        isConfigured={isConfigured}
+        initialBanner={initialBanner}
+      />
+    );
+  }
+
+  // If user is authenticated, fetch their tasks and render their personal Kanban board
+  const userTasks = db
+    .select()
+    .from(tasks)
+    .where(eq(tasks.userId, authContext.user.id))
+    .orderBy(asc(tasks.sortOrder), desc(tasks.sourceCreatedAt))
+    .all();
+
+  const lastSyncTime = await getSetting(`last_sync_time_${authContext.user.id}`, '');
+
   return (
     <Dashboard
-      initialTasks={allTasks}
-      initialIsConnected={isConnected}
+      initialTasks={userTasks}
+      initialIsConnected={true}
       initialIsConfigured={isConfigured}
-      initialUser={isConnected ? config.githubUser : null}
+      initialUser={{
+        id: authContext.user.id,
+        login: authContext.user.username,
+        name: authContext.user.name,
+        avatarUrl: authContext.user.avatarUrl,
+        email: authContext.user.email,
+      }}
       initialLastSync={lastSyncTime || null}
       initialBanner={initialBanner}
     />

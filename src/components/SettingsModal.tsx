@@ -11,15 +11,24 @@ import {
   LogIn,
   LogOut,
   Info,
+  Radio,
 } from 'lucide-react';
-import { GitHubUserSession } from '@/lib/config';
 import { useMounted } from '@/lib/date-utils';
 import { GitHubIcon } from './GitHubIcon';
+import { UserSessionInfo } from './Navbar';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaveSuccess?: () => void;
+}
+
+interface ConnectedAccount {
+  id: string;
+  provider: string;
+  providerAccountId: string;
+  hasRefreshToken: boolean;
+  tokenExpiresAt: string | null;
 }
 
 export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalProps) {
@@ -29,7 +38,8 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
   const [hasClientSecret, setHasClientSecret] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
-  const [user, setUser] = useState<GitHubUserSession | null>(null);
+  const [user, setUser] = useState<UserSessionInfo | null>(null);
+  const [accounts, setAccounts] = useState<ConnectedAccount[]>([]);
 
   const [queries, setQueries] = useState<string[]>([]);
   const [queryInput, setQueryInput] = useState('');
@@ -55,6 +65,7 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
           setIsConnected(data.isConnected || false);
           setIsConfigured(data.isConfigured || false);
           setUser(data.user || null);
+          setAccounts(data.accounts || []);
           setClientId(data.githubClientId || '');
           setHasClientSecret(data.hasClientSecret || false);
           setQueries(data.githubQueries || []);
@@ -84,6 +95,7 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
       if (res.ok) {
         setIsConnected(false);
         setUser(null);
+        setAccounts([]);
         setStatusMessage({ type: 'success', text: 'Disconnected from GitHub.' });
         onSaveSuccess?.();
         setTimeout(() => setStatusMessage(null), 3000);
@@ -143,6 +155,7 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
         setIsConnected(data.isConnected || false);
         setIsConfigured(data.isConfigured || false);
         setUser(data.user || null);
+        setAccounts(data.accounts || []);
         setClientId(data.githubClientId || '');
         setHasClientSecret(data.hasClientSecret || false);
         setQueries(data.githubQueries || []);
@@ -248,7 +261,9 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
                           <span>{user.name || user.login}</span>
                           <span className="text-xs font-mono text-zinc-400">@{user.login}</span>
                         </div>
-                        <div className="text-xs text-zinc-400">OAuth access active</div>
+                        <div className="text-xs text-zinc-400">
+                          OAuth session active • {accounts.find((a) => a.provider === 'github')?.hasRefreshToken ? 'Refresh token stored' : 'Standard token'}
+                        </div>
                       </div>
                     </div>
 
@@ -270,7 +285,7 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
                   <div className="p-3.5 rounded-lg bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="text-xs text-zinc-400">
                       {isConfigured
-                        ? 'GitHub App is configured. Click below to sign in and grant access.'
+                        ? 'GitHub App is configured. Click below to sign in with GitHub.'
                         : 'Configure Client ID and Secret below, then connect your account.'}
                     </div>
                     <a
@@ -278,10 +293,22 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
                       className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shrink-0 shadow-sm transition-colors"
                     >
                       <LogIn className="w-3.5 h-3.5" />
-                      <span>Connect with GitHub</span>
+                      <span>Sign in with GitHub</span>
                     </a>
                   </div>
                 )}
+
+                {/* Multi-Source Integrations Preview */}
+                <div className="p-3 rounded-lg bg-zinc-950/50 border border-zinc-800/60 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <Radio className="w-4 h-4 text-purple-400" />
+                    <div>
+                      <span className="font-medium text-zinc-300">Slack & Custom Ingestors</span>
+                      <span className="text-zinc-500 block text-[11px]">Multi-source schema active. Direct webhook/OAuth connect coming soon.</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">Ready</span>
+                </div>
 
                 {/* GitHub App Credentials */}
                 <div className="space-y-3 pt-2">
@@ -327,7 +354,7 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
                       {callbackUrl}
                     </code>
                     <p className="text-[11px] text-zinc-500">
-                      Scopes required: <code className="text-zinc-400 font-mono">repo, read:user</code>
+                      Scopes requested: <code className="text-zinc-400 font-mono">repo, read:user, user:email</code>
                     </p>
                   </div>
                 </div>
@@ -337,7 +364,7 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
               <div className="space-y-3 pt-2 border-t border-zinc-800/70">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                    GitHub Search Queries
+                    GitHub Search Queries (User Scoped)
                   </label>
                   <span className="text-[11px] text-zinc-400 font-mono">
                     {queries.length} active {queries.length === 1 ? 'query' : 'queries'}

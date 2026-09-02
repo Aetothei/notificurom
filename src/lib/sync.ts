@@ -1,23 +1,44 @@
 import { db } from '@/db';
-import { tasks } from '@/db/schema';
+import { tasks, users, accounts } from '@/db/schema';
 import { eq, and, ne } from 'drizzle-orm';
 import { GitHubIngestor } from './ingestors/github';
-import { Ingestor, SyncResult } from './types';
-import { getAppConfig, setSetting } from './config';
+import { Ingestor, IngestorContext, SyncResult } from './types';
+import { getUserSettings, refreshAccountTokenIfNeeded } from './auth';
+import { setSetting } from './config';
 import crypto from 'crypto';
 
-const ingestors: Ingestor[] = [
-  new GitHubIngestor(),
-];
+const ingestorRegistry: Ingestor[] = [new GitHubIngestor()];
 
-export async function runSync(): Promise<SyncResult[]> {
-  const config = await getAppConfig();
+/**
+ * Synchronizes tasks from all connected accounts for a specific user.
+ */
+export async function syncUser(userId: string): Promise<SyncResult[]> {
+  const user = db.select().from(users).where(eq(users.id, userId)).get();
+  if (!user) {
+    return [
+      {
+        source: 'all',
+        fetched: 0,
+        created: 0,
+        updated: 0,
+        autoResolved: 0,
+        errors: ['User not found'],
+      },
+    ];
+  }
+
+  const settings = await getUserSettings(userId);
+  const userAccounts = db.select().from(accounts).where(eq(accounts.userId, userId)).all();
+
   const results: SyncResult[] = [];
   const now = new Date().toISOString();
 
-  for (const ingestor of ingestors) {
+  for (const account of userAccounts) {
+    const ingestor = ingestorRegistry.find((i) => i.provider === account.provider);
+    if (!ingestor) continue;
+
     const result: SyncResult = {
-      source: ingestor.name,
+      source: ingestor.provider,
       fetched: 0,
       created: 0,
       updated: 0,
@@ -26,24 +47,35 @@ export async function runSync(): Promise<SyncResult[]> {
     };
 
     try {
-      const isEnabled = await ingestor.isEnabled();
+      // 1. Refresh token if expired
+      const validAccount = await refreshAccountTokenIfNeeded(account);
+      const context: IngestorContext = {
+        user,
+        account: validAccount,
+        settings,
+      };
+
+      const isEnabled = await ingestor.isEnabled(context);
       if (!isEnabled) {
-        result.errors.push(`${ingestor.name} is not configured (missing credentials).`);
+        result.errors.push(`${ingestor.provider} is not configured with a valid token.`);
         results.push(result);
         continue;
       }
 
-      const items = await ingestor.fetchItems();
+      // 2. Fetch items from provider
+      const items = await ingestor.fetchItems(context);
       result.fetched = items.length;
 
       const seenSourceIds = new Set<string>();
 
       for (const item of items) {
         seenSourceIds.add(item.sourceId);
+
+        // Find existing task scoped to this user
         const existing = db
           .select()
           .from(tasks)
-          .where(eq(tasks.sourceId, item.sourceId))
+          .where(and(eq(tasks.userId, userId), eq(tasks.sourceId, item.sourceId)))
           .get();
 
         const metadataStr = JSON.stringify(item.metadata || {});
@@ -53,6 +85,7 @@ export async function runSync(): Promise<SyncResult[]> {
           db.insert(tasks)
             .values({
               id: crypto.randomUUID(),
+              userId,
               source: item.source,
               sourceType: item.sourceType,
               sourceId: item.sourceId,
@@ -74,11 +107,11 @@ export async function runSync(): Promise<SyncResult[]> {
             .run();
           result.created++;
         } else {
-          // Existing task - preserve Kanban column & statusUpdatedAt, update title/metadata
+          // Existing task - preserve Kanban status unless auto-archiving closed
           let newStatus = existing.status;
           let newStatusUpdatedAt = existing.statusUpdatedAt;
 
-          if (config.autoArchiveClosed && item.isClosed && existing.status !== 'done') {
+          if (settings.autoArchiveClosed && item.isClosed && existing.status !== 'done') {
             newStatus = 'done';
             newStatusUpdatedAt = now;
             result.autoResolved++;
@@ -103,36 +136,37 @@ export async function runSync(): Promise<SyncResult[]> {
         }
       }
 
-      // Check items currently in DB that were not in the search results (closed, unassigned, or deleted)
-      if (ingestor instanceof GitHubIngestor) {
-        const activeTasks = db
+      // 3. Verify status of unreturned tasks (e.g. issues closed, merged, or unassigned)
+      if (ingestor.checkItemsStatus) {
+        const activeUserTasks = db
           .select()
           .from(tasks)
           .where(
             and(
-              eq(tasks.source, 'github'),
+              eq(tasks.userId, userId),
+              eq(tasks.source, ingestor.provider),
               eq(tasks.isClosed, false),
               ne(tasks.status, 'done')
             )
           )
           .all();
 
-        const unreturnedTasks = activeTasks.filter((t) => !seenSourceIds.has(t.sourceId));
+        const unreturnedTasks = activeUserTasks.filter((t) => !seenSourceIds.has(t.sourceId));
 
         if (unreturnedTasks.length > 0) {
           const checkedStatusMap = await ingestor.checkItemsStatus(
-            unreturnedTasks.map((t) => t.sourceId)
+            unreturnedTasks.map((t) => t.sourceId),
+            context
           );
 
           for (const [sourceId, statusInfo] of checkedStatusMap.entries()) {
             if (statusInfo.isNotFound || statusInfo.isUnassigned) {
-              // Assignment was removed or issue was deleted - remove from board
               db.delete(tasks)
-                .where(eq(tasks.sourceId, sourceId))
+                .where(and(eq(tasks.userId, userId), eq(tasks.sourceId, sourceId)))
                 .run();
               result.removed = (result.removed || 0) + 1;
             } else if (statusInfo.isClosed) {
-              if (config.autoArchiveClosed) {
+              if (settings.autoArchiveClosed) {
                 db.update(tasks)
                   .set({
                     isClosed: true,
@@ -141,7 +175,7 @@ export async function runSync(): Promise<SyncResult[]> {
                     updatedAt: now,
                     ...(statusInfo.title ? { title: statusInfo.title } : {}),
                   })
-                  .where(eq(tasks.sourceId, sourceId))
+                  .where(and(eq(tasks.userId, userId), eq(tasks.sourceId, sourceId)))
                   .run();
                 result.autoResolved++;
               } else {
@@ -151,7 +185,7 @@ export async function runSync(): Promise<SyncResult[]> {
                     updatedAt: now,
                     ...(statusInfo.title ? { title: statusInfo.title } : {}),
                   })
-                  .where(eq(tasks.sourceId, sourceId))
+                  .where(and(eq(tasks.userId, userId), eq(tasks.sourceId, sourceId)))
                   .run();
               }
             }
@@ -166,6 +200,20 @@ export async function runSync(): Promise<SyncResult[]> {
     results.push(result);
   }
 
-  await setSetting('last_sync_time', now);
+  await setSetting(`last_sync_time_${userId}`, now);
   return results;
+}
+
+/**
+ * Synchronizes tasks across all active registered users (for background cron jobs).
+ */
+export async function syncAllUsers(): Promise<Record<string, SyncResult[]>> {
+  const allUsers = db.select().from(users).all();
+  const allResults: Record<string, SyncResult[]> = {};
+
+  for (const user of allUsers) {
+    allResults[user.id] = await syncUser(user.id);
+  }
+
+  return allResults;
 }

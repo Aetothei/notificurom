@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getAppConfig, setGitHubAuth, getBaseUrl } from '@/lib/config';
+import { getSystemConfig, getBaseUrl } from '@/lib/config';
+import { upsertUserFromGitHub, createSession } from '@/lib/auth';
+import { syncUser } from '@/lib/sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const config = await getAppConfig();
+    const config = await getSystemConfig();
     const clientId = config.githubClientId;
     const clientSecret = config.githubClientSecret;
 
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Exchange authorization code for access token
+    // Exchange authorization code for access token & refresh token
     const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: {
@@ -95,10 +97,30 @@ export async function GET(req: NextRequest) {
 
     const userData = await userRes.json();
 
-    await setGitHubAuth(tokenData.access_token, {
-      login: userData.login,
-      name: userData.name || null,
-      avatarUrl: userData.avatar_url || null,
+    // JIT Provisioning / Account update with token & refresh token
+    const user = await upsertUserFromGitHub(
+      {
+        id: userData.id,
+        login: userData.login,
+        name: userData.name || null,
+        avatar_url: userData.avatar_url || null,
+        email: userData.email || null,
+      },
+      {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token || null,
+        expires_in: tokenData.expires_in || null,
+        refresh_token_expires_in: tokenData.refresh_token_expires_in || null,
+        scope: tokenData.scope || null,
+      }
+    );
+
+    // Create session cookie
+    await createSession(user.id);
+
+    // Trigger initial background sync
+    syncUser(user.id).catch((err) => {
+      console.error('Initial user sync error:', err);
     });
 
     return NextResponse.redirect(new URL('/?auth=success', baseUrl));

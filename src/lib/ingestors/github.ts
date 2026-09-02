@@ -1,5 +1,5 @@
-import { Ingestor, NormalizedItem, TaskSourceType } from '../types';
-import { getAppConfig, clearGitHubAuth } from '../config';
+import { Ingestor, IngestorContext, IngestorItemStatus, NormalizedItem, TaskSourceType } from '../types';
+import { DEFAULT_GITHUB_QUERIES } from '../auth';
 
 interface GitHubLabel {
   id: number;
@@ -40,43 +40,11 @@ interface GitHubSearchResponse {
   items: GitHubSearchItem[];
 }
 
-export interface GitHubItemStatus {
-  isClosed: boolean;
-  isNotFound?: boolean;
-  isUnassigned?: boolean;
-  title?: string;
-}
-
 export class GitHubIngestor implements Ingestor {
-  readonly name = 'github';
+  readonly provider = 'github';
 
-  async isEnabled(): Promise<boolean> {
-    const config = await getAppConfig();
-    return Boolean(config.githubAccessToken && config.githubAccessToken.trim().length > 0);
-  }
-
-  async getCurrentUser(): Promise<string | null> {
-    const config = await getAppConfig();
-    if (!config.githubAccessToken) return null;
-    if (config.githubUser?.login) return config.githubUser.login;
-    try {
-      const res = await fetch('https://api.github.com/user', {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${config.githubAccessToken.trim()}`,
-          'X-GitHub-Api-Version': '2022-11-28',
-          'User-Agent': 'Notificurom-GTD-App',
-        },
-        cache: 'no-store',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data.login || null;
-      }
-    } catch {
-      // ignore
-    }
-    return null;
+  async isEnabled(context: IngestorContext): Promise<boolean> {
+    return Boolean(context.account.accessToken && context.account.accessToken.trim().length > 0);
   }
 
   private extractRepoFromUrl(htmlUrl: string, repositoryUrl: string): string {
@@ -104,15 +72,34 @@ export class GitHubIngestor implements Ingestor {
     return 'issue';
   }
 
-  async fetchItems(): Promise<NormalizedItem[]> {
-    const config = await getAppConfig();
-    if (!config.githubAccessToken) {
+  private getQueries(context: IngestorContext): string[] {
+    if (context.settings.githubQueries) {
+      try {
+        const parsed = JSON.parse(context.settings.githubQueries);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        const lines = context.settings.githubQueries
+          .split('\n')
+          .map((q) => q.trim())
+          .filter(Boolean);
+        if (lines.length > 0) return lines;
+      }
+    }
+    return DEFAULT_GITHUB_QUERIES;
+  }
+
+  async fetchItems(context: IngestorContext): Promise<NormalizedItem[]> {
+    const accessToken = context.account.accessToken.trim();
+    if (!accessToken) {
       return [];
     }
 
+    const queries = this.getQueries(context);
     const itemsMap = new Map<string, NormalizedItem>();
 
-    for (const query of config.githubQueries) {
+    for (const query of queries) {
       if (!query.trim()) continue;
 
       const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&per_page=100`;
@@ -120,7 +107,7 @@ export class GitHubIngestor implements Ingestor {
       const response = await fetch(url, {
         headers: {
           Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${config.githubAccessToken.trim()}`,
+          Authorization: `Bearer ${accessToken}`,
           'X-GitHub-Api-Version': '2022-11-28',
           'User-Agent': 'Notificurom-GTD-App',
         },
@@ -128,10 +115,6 @@ export class GitHubIngestor implements Ingestor {
       });
 
       if (!response.ok) {
-        if (response.status === 401) {
-          await clearGitHubAuth();
-          throw new Error('GitHub access token has expired or was revoked. Please click "Connect GitHub" to reconnect.');
-        }
         const errorText = await response.text();
         throw new Error(
           `GitHub API error (${response.status} ${response.statusText}): ${errorText}`
@@ -145,10 +128,9 @@ export class GitHubIngestor implements Ingestor {
         const sourceId = `github:${repo}#${item.number}`;
         const sourceType = this.determineSourceType(item, query);
 
-        // If item is already seen in a previous query (e.g. both assigned & review-requested), preserve or merge
         if (!itemsMap.has(sourceId)) {
           itemsMap.set(sourceId, {
-            source: this.name,
+            source: this.provider,
             sourceType,
             sourceId,
             title: item.title,
@@ -179,26 +161,29 @@ export class GitHubIngestor implements Ingestor {
     return Array.from(itemsMap.values());
   }
 
-  // Helper method to check status of tracked GitHub items to detect closed/merged state or unassignment
-  async checkItemsStatus(sourceIds: string[]): Promise<Map<string, GitHubItemStatus>> {
-    const config = await getAppConfig();
-    const result = new Map<string, GitHubItemStatus>();
-    if (!config.githubAccessToken || sourceIds.length === 0) return result;
+  async checkItemsStatus(
+    sourceIds: string[],
+    context: IngestorContext
+  ): Promise<Map<string, IngestorItemStatus>> {
+    const result = new Map<string, IngestorItemStatus>();
+    const accessToken = context.account.accessToken.trim();
+    if (!accessToken || sourceIds.length === 0) return result;
 
-    const currentUser = await this.getCurrentUser();
-    const currentUsername = currentUser ? currentUser.toLowerCase() : null;
+    const currentUsername = context.user.username ? context.user.username.toLowerCase() : null;
 
     // Filter github sourceIds: format `github:owner/repo#123`
     const githubItems = sourceIds
       .map((id) => {
         const match = id.match(/^github:([^/]+)\/([^#]+)#(\d+)$/);
-        return match ? { sourceId: id, owner: match[1], repo: match[2], number: parseInt(match[3], 10) } : null;
+        return match
+          ? { sourceId: id, owner: match[1], repo: match[2], number: parseInt(match[3], 10) }
+          : null;
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
 
     const headers = {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${config.githubAccessToken.trim()}`,
+      Authorization: `Bearer ${accessToken}`,
       'X-GitHub-Api-Version': '2022-11-28',
       'User-Agent': 'Notificurom-GTD-App',
     };
@@ -235,7 +220,6 @@ export class GitHubIngestor implements Ingestor {
               return;
             }
 
-            // If issue/PR is still open on GitHub, check if user is still assigned
             let isUnassigned = false;
             if (currentUsername) {
               const assignees = (data.assignees || []).map((a: { login: string }) =>
@@ -244,7 +228,6 @@ export class GitHubIngestor implements Ingestor {
               const isAssigned = assignees.includes(currentUsername);
 
               if (data.pull_request) {
-                // If it's a pull request and user is not in assignees, check requested_reviewers
                 if (!isAssigned) {
                   try {
                     const prRes = await fetch(
@@ -268,7 +251,6 @@ export class GitHubIngestor implements Ingestor {
                   }
                 }
               } else {
-                // Regular issue: if not assigned to user anymore
                 if (!isAssigned) {
                   isUnassigned = true;
                 }

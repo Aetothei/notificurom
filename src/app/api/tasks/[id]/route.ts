@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { tasks, TaskStatus } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
+import { getCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,11 +11,21 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authContext = await getCurrentUser();
+    if (!authContext) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await req.json();
     const now = new Date().toISOString();
 
-    const existing = db.select().from(tasks).where(eq(tasks.id, id)).get();
+    const existing = db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, id), eq(tasks.userId, authContext.user.id)))
+      .get();
+
     if (!existing) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 });
     }
@@ -42,9 +53,17 @@ export async function PATCH(
       updates.isClosed = Boolean(body.isClosed);
     }
 
-    db.update(tasks).set(updates).where(eq(tasks.id, id)).run();
+    db.update(tasks)
+      .set(updates)
+      .where(and(eq(tasks.id, id), eq(tasks.userId, authContext.user.id)))
+      .run();
 
-    const updatedTask = db.select().from(tasks).where(eq(tasks.id, id)).get();
+    const updatedTask = db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, id), eq(tasks.userId, authContext.user.id)))
+      .get();
+
     return NextResponse.json({ success: true, task: updatedTask });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update task';
@@ -57,8 +76,16 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authContext = await getCurrentUser();
+    if (!authContext) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
-    db.delete(tasks).where(eq(tasks.id, id)).run();
+    db.delete(tasks)
+      .where(and(eq(tasks.id, id), eq(tasks.userId, authContext.user.id)))
+      .run();
+
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to delete task';

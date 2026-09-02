@@ -2,19 +2,186 @@ import { test, expect } from '@playwright/test';
 import Database from 'better-sqlite3';
 import path from 'path';
 
-test.describe('Notificurom Kanban Board', () => {
-  test.beforeEach(async ({ request }) => {
-    // Clean up existing tasks to make each test deterministic
-    const res = await request.get('/api/tasks');
+const TEST_USER_ID = 'test-user-e2e-123';
+const TEST_SESSION_ID = 'test-session-token-e2e';
+
+function setupTestDatabase() {
+  const dbPath = process.env.DATABASE_URL || path.join(process.cwd(), 'data', 'notificurom.db');
+  const sqlite = new Database(dbPath);
+  const now = new Date().toISOString();
+  const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Ensure tables exist
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      github_id TEXT UNIQUE,
+      username TEXT NOT NULL,
+      name TEXT,
+      email TEXT,
+      avatar_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      provider_account_id TEXT NOT NULL,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT,
+      token_expires_at TEXT,
+      scope TEXT,
+      profile TEXT,
+      config TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      github_queries TEXT,
+      auto_archive_closed INTEGER NOT NULL DEFAULT 1,
+      sync_interval_mins INTEGER NOT NULL DEFAULT 15,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      source TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      source_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      repository TEXT,
+      author TEXT,
+      author_avatar_url TEXT,
+      status TEXT NOT NULL DEFAULT 'inbox',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_closed INTEGER NOT NULL DEFAULT 0,
+      metadata TEXT,
+      source_created_at TEXT NOT NULL,
+      source_updated_at TEXT,
+      status_updated_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  // Upsert test user
+  sqlite
+    .prepare(
+      `INSERT INTO users (id, github_id, username, name, email, avatar_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         github_id=excluded.github_id,
+         username=excluded.username,
+         name=excluded.name,
+         avatar_url=excluded.avatar_url,
+         updated_at=excluded.updated_at`
+    )
+    .run(
+      TEST_USER_ID,
+      '12345',
+      'octocat',
+      'Mona Lisa Octocat',
+      'octocat@github.com',
+      'https://github.com/octocat.png',
+      now,
+      now
+    );
+
+  // Upsert test session
+  sqlite
+    .prepare(
+      `INSERT INTO sessions (id, user_id, expires_at, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         user_id=excluded.user_id,
+         expires_at=excluded.expires_at`
+    )
+    .run(TEST_SESSION_ID, TEST_USER_ID, future, now);
+
+  // Upsert test account with refresh token
+  sqlite
+    .prepare(
+      `INSERT INTO accounts (id, user_id, provider, provider_account_id, access_token, refresh_token, token_expires_at, scope, profile, config, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, provider) DO UPDATE SET
+         access_token=excluded.access_token,
+         refresh_token=excluded.refresh_token,
+         updated_at=excluded.updated_at`
+    )
+    .run(
+      'account-test-1',
+      TEST_USER_ID,
+      'github',
+      '12345',
+      'gho_mock_access_token',
+      'ghr_mock_refresh_token',
+      future,
+      'repo,read:user,user:email',
+      JSON.stringify({ login: 'octocat', name: 'Mona Lisa Octocat' }),
+      '{}',
+      now,
+      now
+    );
+
+  sqlite.close();
+}
+
+test.describe('Notificurom Kanban Board & Multi-User Flow', () => {
+  test.beforeEach(async ({ context, request }) => {
+    setupTestDatabase();
+
+    // Set authenticated session cookie for page navigation
+    await context.addCookies([
+      {
+        name: 'notificurom_session',
+        value: TEST_SESSION_ID,
+        domain: 'localhost',
+        path: '/',
+      },
+    ]);
+
+    // Clean up existing tasks for this user
+    const res = await request.get('/api/tasks', {
+      headers: {
+        Cookie: `notificurom_session=${TEST_SESSION_ID}`,
+      },
+    });
+
     if (res.ok()) {
       const data = await res.json();
       for (const t of data.tasks || []) {
-        await request.delete(`/api/tasks/${t.id}`);
+        await request.delete(`/api/tasks/${t.id}`, {
+          headers: {
+            Cookie: `notificurom_session=${TEST_SESSION_ID}`,
+          },
+        });
       }
     }
 
-    // Seed test tasks in Inbox
+    // Seed test tasks in Inbox for authenticated test user
     await request.post('/api/tasks', {
+      headers: {
+        Cookie: `notificurom_session=${TEST_SESSION_ID}`,
+      },
       data: {
         title: 'Task Alpha',
         sourceType: 'task',
@@ -24,6 +191,9 @@ test.describe('Notificurom Kanban Board', () => {
     });
 
     await request.post('/api/tasks', {
+      headers: {
+        Cookie: `notificurom_session=${TEST_SESSION_ID}`,
+      },
       data: {
         title: 'Task Beta',
         sourceType: 'pr',
@@ -34,7 +204,7 @@ test.describe('Notificurom Kanban Board', () => {
     });
   });
 
-  test('Story 2: loads cleanly with zero console or hydration errors', async ({ page }) => {
+  test('Story 2: loads cleanly with zero console or hydration errors for logged-in user', async ({ page }) => {
     const consoleIssues: string[] = [];
     page.on('console', (msg) => {
       const text = msg.text();
@@ -183,9 +353,28 @@ test.describe('Notificurom Kanban Board', () => {
     await expect(page.getByText('Task Alpha')).not.toBeVisible();
   });
 
+  test('Unauthenticated user lands on Sign in with GitHub screen', async ({ context, page, request }) => {
+    // 1. Configure system credentials
+    await request.post('/api/settings', {
+      data: {
+        githubClientId: 'client_id_test',
+        githubClientSecret: 'client_secret_test',
+      },
+    });
+
+    // 2. Clear cookies to simulate unauthenticated visitor
+    await context.clearCookies();
+
+    await page.goto('/');
+    await expect(page.getByText('Achieve Zero-Inbox')).toBeVisible();
+    await expect(page.getByText('Continue with GitHub')).toBeVisible();
+  });
+
   test('GitHub App OAuth API endpoints & status workflow', async ({ request }) => {
     // 1. Reset OAuth settings
-    await request.post('/api/auth/github/disconnect');
+    await request.post('/api/auth/github/disconnect', {
+      headers: { Cookie: `notificurom_session=${TEST_SESSION_ID}` },
+    });
     await request.post('/api/settings', {
       data: {
         githubClientId: '',
@@ -193,15 +382,11 @@ test.describe('Notificurom Kanban Board', () => {
       },
     });
 
-    // 2. Initial status: not configured, not connected
+    // 2. Status with unconfigured credentials
     const statusRes = await request.get('/api/auth/github/status');
     expect(statusRes.ok()).toBeTruthy();
     const statusData = await statusRes.json();
-    expect(statusData).toEqual({
-      isConfigured: false,
-      isConnected: false,
-      user: null,
-    });
+    expect(statusData.isConfigured).toBe(false);
 
     // 3. Configure Client ID & Secret
     const saveSettingsRes = await request.post('/api/settings', {
@@ -218,7 +403,6 @@ test.describe('Notificurom Kanban Board', () => {
     // 4. Status is now configured
     const statusAfterConfig = await (await request.get('/api/auth/github/status')).json();
     expect(statusAfterConfig.isConfigured).toBe(true);
-    expect(statusAfterConfig.isConnected).toBe(false);
 
     // 5. GET /api/auth/github/login returns redirect to GitHub OAuth
     const loginRes = await request.get('/api/auth/github/login', {
@@ -228,7 +412,7 @@ test.describe('Notificurom Kanban Board', () => {
     const location = loginRes.headers()['location'];
     expect(location).toContain('https://github.com/login/oauth/authorize');
     expect(location).toContain('client_id=test_client_id_123');
-    expect(location).toContain('scope=repo%2Cread%3Auser');
+    expect(location).toContain('scope=repo%2Cread%3Auser%2Cuser%3Aemail');
     expect(location).toContain('state=');
 
     // Check state cookie is set
@@ -243,42 +427,15 @@ test.describe('Notificurom Kanban Board', () => {
     expect([302, 307]).toContain(callbackRes.status());
     expect(callbackRes.headers()['location']).toContain('/?auth=error');
 
-    // 7. Disconnect endpoint
-    const disconnectRes = await request.post('/api/auth/github/disconnect');
-    expect(disconnectRes.ok()).toBeTruthy();
-    const disconnectData = await disconnectRes.json();
-    expect(disconnectData.success).toBe(true);
+    // 7. Logout endpoint
+    const logoutRes = await request.post('/api/auth/logout');
+    expect(logoutRes.ok()).toBeTruthy();
+    const logoutData = await logoutRes.json();
+    expect(logoutData.success).toBe(true);
   });
 
-  test('UI: Displays GitHub OAuth banners, settings, and handles auth callback states', async ({ page, request }) => {
-    // Reset to disconnected state
-    await request.post('/api/auth/github/disconnect');
-
-    await page.goto('/');
-
-    // Verify "Connect with GitHub" banner is visible when disconnected
-    await expect(page.getByText('Connect your GitHub account')).toBeVisible();
-
-    // Open Settings Modal
-    await page.getByTitle(/Settings/).click();
-    await expect(page.getByText('Configuration & Integrations')).toBeVisible();
-    await expect(page.getByText('GitHub App / OAuth Integration')).toBeVisible();
-    await expect(page.getByPlaceholder('e.g. Iv1.1234567890abcdef')).toBeVisible();
-
-    // Close modal
-    await page.getByRole('button', { name: 'Cancel' }).click();
-
-    // Visit /?auth=success and check success banner
-    await page.goto('/?auth=success');
-    await expect(page.getByText('Successfully connected to GitHub!')).toBeVisible();
-
-    // Visit /?auth=error and check error banner
-    await page.goto('/?auth=error&error=access_denied');
-    await expect(page.getByText(/GitHub connection failed/)).toBeVisible();
-  });
-
-  test('UI: Displays connected GitHub user state and allows disconnect', async ({ page, request }) => {
-    // 1. Configure auth with token and user profile
+  test('UI: Displays connected GitHub user state and allows logout', async ({ page, request }) => {
+    // 1. Configure auth with system credentials
     await request.post('/api/settings', {
       data: {
         githubClientId: 'client_id_test',
@@ -286,50 +443,25 @@ test.describe('Notificurom Kanban Board', () => {
       },
     });
 
-    // Directly set auth in DB for test simulation
-    const dbPath = process.env.DATABASE_URL || path.join(process.cwd(), 'data', 'notificurom.db');
-    const sqlite = new Database(dbPath);
-    const now = new Date().toISOString();
-    const userJson = JSON.stringify({
-      login: 'octocat',
-      name: 'Mona Lisa Octocat',
-      avatarUrl: 'https://github.com/octocat.png',
-    });
-    sqlite
-      .prepare(
-        "INSERT INTO settings (key, value, updated_at) VALUES ('github_access_token', 'gho_mock_token', ?) ON CONFLICT(key) DO UPDATE SET value='gho_mock_token', updated_at=?"
-      )
-      .run(now, now);
-    sqlite
-      .prepare(
-        "INSERT INTO settings (key, value, updated_at) VALUES ('github_user', ?, ?) ON CONFLICT(key) DO UPDATE SET value=?, updated_at=?"
-      )
-      .run(userJson, now, userJson, now);
-    sqlite.close();
-
     // 2. Open page and verify connected user is displayed
     await page.goto('/');
-
-    // Verify disconnected banner is NOT visible
-    await expect(page.getByText('Connect your GitHub account')).not.toBeVisible();
-
-    // Verify navbar displays connected user
     await expect(page.getByText('@octocat')).toBeVisible();
 
-    // 3. Open Settings Modal and verify connected status
-    await page.getByTitle(/Connected as @octocat/).click();
+    // 3. Open user menu
+    await page.getByText('@octocat').click();
+    await expect(page.getByText('Settings & Queries')).toBeVisible();
+    await expect(page.getByText('Log Out')).toBeVisible();
+
+    // 4. Open Settings Modal and verify connected status
+    await page.getByText('Settings & Queries').click();
     await expect(page.getByText('Configuration & Integrations')).toBeVisible();
     await expect(page.getByText('Connected', { exact: true })).toBeVisible();
     await expect(page.getByText('Mona Lisa Octocat')).toBeVisible();
-    await expect(page.getByText('OAuth access active')).toBeVisible();
+    await expect(page.getByText(/OAuth session active/)).toBeVisible();
 
-    // 4. Click Disconnect inside Settings Modal
+    // 5. Click Disconnect inside Settings Modal
     await page.getByRole('button', { name: 'Disconnect' }).click();
     await expect(page.getByText('Disconnected from GitHub.')).toBeVisible();
     await expect(page.getByText('Not Connected')).toBeVisible();
-
-    // 5. Close settings and verify connected user badge is gone
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByText('Connect your GitHub account')).toBeVisible();
   });
 });

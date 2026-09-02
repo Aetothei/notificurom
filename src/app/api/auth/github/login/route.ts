@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getAppConfig, getBaseUrl } from '@/lib/config';
+import { getSystemConfig, getBaseUrl } from '@/lib/config';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   const baseUrl = getBaseUrl(req);
   try {
-    const config = await getAppConfig();
+    const config = await getSystemConfig();
     const clientId = config.githubClientId;
 
     if (!clientId) {
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 
     const state = crypto.randomBytes(16).toString('hex');
     const redirectUri = `${baseUrl}/api/auth/github/callback`;
-    const scope = 'repo,read:user';
+    const scope = 'repo,read:user,user:email';
 
     const cookieStore = await cookies();
     cookieStore.set('github_oauth_state', state, {

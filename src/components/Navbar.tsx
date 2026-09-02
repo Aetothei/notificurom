@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   RotateCw,
   Settings,
@@ -11,9 +11,18 @@ import {
   FilterX,
   Check,
   LogIn,
+  LogOut,
+  ChevronDown,
 } from 'lucide-react';
 import { formatRelativeShort, useMounted } from '@/lib/date-utils';
-import { GitHubUserSession } from '@/lib/config';
+
+export interface UserSessionInfo {
+  id?: string;
+  login: string;
+  name?: string | null;
+  avatarUrl?: string | null;
+  email?: string | null;
+}
 
 interface NavbarProps {
   onSync: () => Promise<void>;
@@ -30,7 +39,7 @@ interface NavbarProps {
   totalTaskCount: number;
   isConnected: boolean;
   isConfigured: boolean;
-  user: GitHubUserSession | null;
+  user: UserSessionInfo | null;
 }
 
 export function Navbar({
@@ -52,6 +61,19 @@ export function Navbar({
 }: NavbarProps) {
   const mounted = useMounted();
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Keyboard shortcut: '/' to focus search, 'Escape' to clear
   useEffect(() => {
@@ -90,6 +112,15 @@ export function Navbar({
       return `Last synced ${relTime} ago (${exactTime})`;
     } catch {
       return 'Sync from GitHub';
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.replace('/');
+    } catch {
+      window.location.reload();
     }
   };
 
@@ -176,26 +207,57 @@ export function Navbar({
         {/* Right: Actions (Sync, Connect/User, Add, Settings) */}
         <div className="flex items-center gap-2 shrink-0">
           {isConnected && user ? (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-mono text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 transition-colors"
-              title={`Connected as @${user.login}${user.name ? ` (${user.name})` : ''}`}
-            >
-              {user.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={user.avatarUrl}
-                  alt={user.login}
-                  className="w-4 h-4 rounded-full ring-1 ring-zinc-700"
-                />
-              ) : (
-                <span className="w-4 h-4 rounded-full bg-indigo-600 text-[10px] text-white flex items-center justify-center font-bold">
-                  {user.login.charAt(0).toUpperCase()}
-                </span>
+            <div className="relative" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-mono text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 transition-colors"
+                title={`Connected as @${user.login}${user.name ? ` (${user.name})` : ''}`}
+              >
+                {user.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={user.avatarUrl}
+                    alt={user.login}
+                    className="w-4 h-4 rounded-full ring-1 ring-zinc-700"
+                  />
+                ) : (
+                  <span className="w-4 h-4 rounded-full bg-indigo-600 text-[10px] text-white flex items-center justify-center font-bold">
+                    {user.login.charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <span className="hidden sm:inline font-medium text-zinc-200">@{user.login}</span>
+                <ChevronDown className="w-3 h-3 text-zinc-500 ml-0.5" />
+              </button>
+
+              {userDropdownOpen && (
+                <div className="absolute right-0 mt-1.5 w-48 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl py-1 text-xs z-50 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="px-3 py-2 border-b border-zinc-800">
+                    <div className="font-semibold text-zinc-100 truncate">{user.name || user.login}</div>
+                    <div className="text-[11px] text-zinc-400 truncate">@{user.login}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserDropdownOpen(false);
+                      onOpenSettings();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-zinc-800 flex items-center gap-2 text-zinc-300 hover:text-zinc-100 transition-colors"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Settings & Queries</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full text-left px-3 py-2 hover:bg-rose-950/40 text-rose-300 flex items-center gap-2 transition-colors border-t border-zinc-800/60"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Log Out</span>
+                  </button>
+                </div>
               )}
-              <span className="hidden sm:inline font-medium text-zinc-200">@{user.login}</span>
-            </button>
+            </div>
           ) : isConfigured ? (
             <a
               href="/api/auth/github/login"

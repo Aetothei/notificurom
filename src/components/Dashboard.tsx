@@ -3,8 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Task } from '@/db/schema';
 import { SyncResult } from '@/lib/types';
-import { GitHubUserSession } from '@/lib/config';
-import { Navbar } from './Navbar';
+import { Navbar, UserSessionInfo } from './Navbar';
 import { KanbanBoard } from './KanbanBoard';
 import { SettingsModal } from './SettingsModal';
 import { NewTaskModal } from './NewTaskModal';
@@ -15,7 +14,7 @@ interface DashboardProps {
   initialTasks: Task[];
   initialIsConnected: boolean;
   initialIsConfigured: boolean;
-  initialUser: GitHubUserSession | null;
+  initialUser: UserSessionInfo | null;
   initialLastSync: string | null;
   initialBanner?: { type: 'info' | 'success' | 'error'; message: string } | null;
 }
@@ -31,7 +30,7 @@ export function Dashboard({
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [isConnected, setIsConnected] = useState(initialIsConnected);
   const [isConfigured, setIsConfigured] = useState(initialIsConfigured);
-  const [user, setUser] = useState<GitHubUserSession | null>(initialUser);
+  const [user, setUser] = useState<UserSessionInfo | null>(initialUser);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(initialLastSync);
   const [isSyncing, setIsSyncing] = useState(false);
   const [justSynced, setJustSynced] = useState(false);
