@@ -1,5 +1,5 @@
 import { Ingestor, NormalizedItem, TaskSourceType } from '../types';
-import { getAppConfig } from '../config';
+import { getAppConfig, clearGitHubAuth } from '../config';
 
 interface GitHubLabel {
   id: number;
@@ -128,6 +128,10 @@ export class GitHubIngestor implements Ingestor {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          await clearGitHubAuth();
+          throw new Error('GitHub access token has expired or was revoked. Please click "Connect GitHub" to reconnect.');
+        }
         const errorText = await response.text();
         throw new Error(
           `GitHub API error (${response.status} ${response.statusText}): ${errorText}`
