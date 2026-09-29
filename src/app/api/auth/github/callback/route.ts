@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
       console.error('Initial user sync error:', err);
     });
 
-    return NextResponse.redirect(new URL('/?auth=success', baseUrl));
+    return NextResponse.redirect(new URL('/?auth=success&syncing=1', baseUrl));
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Callback handling failed';
     return NextResponse.redirect(

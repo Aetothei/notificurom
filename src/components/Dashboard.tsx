@@ -7,7 +7,7 @@ import { Navbar, UserSessionInfo } from './Navbar';
 import { KanbanBoard } from './KanbanBoard';
 import { SettingsModal } from './SettingsModal';
 import { NewTaskModal } from './NewTaskModal';
-import { AlertCircle, CheckCircle2, LogIn, Settings } from 'lucide-react';
+import { AlertCircle, CheckCircle2, LogIn, Settings, RotateCw } from 'lucide-react';
 import { GitHubIcon } from './GitHubIcon';
 
 interface DashboardProps {
@@ -17,6 +17,7 @@ interface DashboardProps {
   initialUser: UserSessionInfo | null;
   initialLastSync: string | null;
   initialBanner?: { type: 'info' | 'success' | 'error'; message: string } | null;
+  initialSyncing?: boolean;
 }
 
 export function Dashboard({
@@ -26,6 +27,7 @@ export function Dashboard({
   initialUser,
   initialLastSync,
   initialBanner = null,
+  initialSyncing = false,
 }: DashboardProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [isConnected, setIsConnected] = useState(initialIsConnected);
@@ -34,6 +36,7 @@ export function Dashboard({
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(initialLastSync);
   const [isSyncing, setIsSyncing] = useState(false);
   const [justSynced, setJustSynced] = useState(false);
+  const [isInitialSyncing, setIsInitialSyncing] = useState(initialSyncing);
   const [searchFilter, setSearchFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -132,6 +135,40 @@ export function Dashboard({
     }
   }, []);
 
+  // Short-interval polling on initial login while background sync finishes
+  useEffect(() => {
+    if (!isInitialSyncing) return;
+
+    let attempts = 0;
+    const maxAttempts = 15; // 15 attempts * 2s = up to 30s
+
+    const checkInitialSync = async () => {
+      attempts++;
+      try {
+        const res = await fetch('/api/tasks');
+        if (res.ok) {
+          const data = await res.json();
+          const fetchedTasks = data.tasks || [];
+          if (fetchedTasks.length > 0 || attempts >= maxAttempts) {
+            setTasks(fetchedTasks);
+            setIsInitialSyncing(false);
+            setLastSyncTime(new Date().toISOString());
+            return;
+          }
+        }
+      } catch {
+        // ignore errors during background poll
+      }
+
+      if (attempts >= maxAttempts) {
+        setIsInitialSyncing(false);
+      }
+    };
+
+    const interval = setInterval(checkInitialSync, 2000);
+    return () => clearInterval(interval);
+  }, [isInitialSyncing]);
+
   // Setup periodic background polling if connected
   useEffect(() => {
     const interval = setInterval(() => {
@@ -191,6 +228,16 @@ export function Dashboard({
                 <span>Configure GitHub App</span>
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Initial Sync Progress Banner */}
+      {isInitialSyncing && (
+        <div className="bg-indigo-950/70 border-b border-indigo-800/60 px-4 py-2.5 text-xs text-indigo-200">
+          <div className="max-w-[1920px] mx-auto flex items-center gap-2">
+            <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-400 shrink-0" />
+            <span>Setting up your board and syncing your GitHub tasks for the first time...</span>
           </div>
         </div>
       )}

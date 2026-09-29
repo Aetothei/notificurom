@@ -41,6 +41,8 @@ export default async function Home({ searchParams }: PageProps) {
     };
   }
 
+  const isInitialSyncing = params.syncing === '1';
+
   // If user is not authenticated, show modern landing & login view
   if (!authContext) {
     return (
@@ -75,6 +77,7 @@ export default async function Home({ searchParams }: PageProps) {
       }}
       initialLastSync={lastSyncTime || null}
       initialBanner={initialBanner}
+      initialSyncing={isInitialSyncing}
     />
   );
 }

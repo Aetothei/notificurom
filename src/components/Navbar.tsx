@@ -63,6 +63,15 @@ export function Navbar({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [, setTick] = useState(0);
+
+  // Update sync freshness label periodically (every 30 seconds)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -114,6 +123,8 @@ export function Navbar({
       return 'Sync from GitHub';
     }
   };
+
+  const syncFreshnessLabel = mounted && lastSyncTime ? `Synced ${formatRelativeShort(lastSyncTime)} ago` : null;
 
   const handleLogout = async () => {
     try {
@@ -279,28 +290,38 @@ export function Navbar({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onSync}
-            disabled={isSyncing}
-            className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-all duration-200 disabled:opacity-60 ${
-              justSynced
-                ? 'bg-emerald-950/60 border-emerald-600/70 text-emerald-300 shadow-sm shadow-emerald-950'
-                : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
-            }`}
-            title={formatLastSyncText()}
-          >
-            {isSyncing ? (
-              <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-            ) : justSynced ? (
-              <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
-            ) : (
-              <RotateCw className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200" />
+          <div className="flex items-center gap-1.5">
+            {syncFreshnessLabel && (
+              <span
+                className="hidden lg:inline text-[11px] text-zinc-400 font-mono select-none mr-1"
+                title={formatLastSyncText()}
+              >
+                {syncFreshnessLabel}
+              </span>
             )}
-            <span>
-              {isSyncing ? 'Syncing...' : justSynced ? 'Synced!' : 'Sync'}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={onSync}
+              disabled={isSyncing}
+              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-all duration-200 disabled:opacity-60 ${
+                justSynced
+                  ? 'bg-emerald-950/60 border-emerald-600/70 text-emerald-300 shadow-sm shadow-emerald-950'
+                  : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
+              }`}
+              title={formatLastSyncText()}
+            >
+              {isSyncing ? (
+                <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+              ) : justSynced ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
+              ) : (
+                <RotateCw className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200" />
+              )}
+              <span>
+                {isSyncing ? 'Syncing...' : justSynced ? 'Synced!' : 'Sync'}
+              </span>
+            </button>
+          </div>
 
           <button
             type="button"
