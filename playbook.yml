@@ -123,3 +123,4 @@
         service_name: notificurom
         service_domain: "{{ lookup('ansible.builtin.env', 'APP_DOMAIN') }}"
         service_upstream: "notificurom.incus:3000"
+        service_route_scope: "external"
