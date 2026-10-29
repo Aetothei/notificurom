@@ -2,6 +2,17 @@
 
 All notable changes to Notificurom starting from the v1.0.0 architecture rewrite are documented in this file.
 
+## [1.0.3] - 2026-10-29
+
+### Added
+- **Browser Desktop Notifications**: Added native browser alerts whenever a new review request, pull request, or assigned issue appears on the board.
+- **Background Task Sync**: Implemented background polling on a configurable interval while the tab is open (default 2 minutes).
+- **Notification Controls & Testing**: Added a clean toggle and live permission indicator in the Settings modal with a **Send test alert** button.
+- **Dedicated Ansible Directory**: Moved all deployment automation into `ansible/` (`ansible.cfg`, `inventory.yml`, `playbook.yml`, `requirements.yml`).
+- **Schema Migration**: Auto-migrates SQLite `user_preferences` to add `notifications_enabled` without data loss.
+
+---
+
 ## [1.0.2] - 2026-10-29
 
 ### Added
