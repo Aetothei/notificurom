@@ -6,3 +6,4 @@ data
 test-results
 playwright-report
 .git
+ansible

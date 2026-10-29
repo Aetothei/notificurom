@@ -16,6 +16,7 @@
   vars:
     notificurom_port: 3000
     notificurom_app_dir: "/opt/notificurom"
+    project_root: "{{ (playbook_dir ~ '/..') | realpath }}"
   tasks:
     - name: Install Docker prerequisites
       ansible.builtin.apt:
@@ -63,21 +64,21 @@
     - name: Create tarball of application on runner
       community.general.archive:
         path:
-          - "{{ playbook_dir }}/src"
-          - "{{ playbook_dir }}/server"
-          - "{{ playbook_dir }}/public"
-          - "{{ playbook_dir }}/index.html"
-          - "{{ playbook_dir }}/vite.config.ts"
-          - "{{ playbook_dir }}/components.json"
-          - "{{ playbook_dir }}/package.json"
-          - "{{ playbook_dir }}/package-lock.json"
-          - "{{ playbook_dir }}/drizzle.config.ts"
-          - "{{ playbook_dir }}/drizzle"
-          - "{{ playbook_dir }}/Dockerfile"
-          - "{{ playbook_dir }}/.dockerignore"
-          - "{{ playbook_dir }}/docker-compose.yml"
-          - "{{ playbook_dir }}/tsconfig.json"
-          - "{{ playbook_dir }}/eslint.config.mjs"
+          - "{{ project_root }}/src"
+          - "{{ project_root }}/server"
+          - "{{ project_root }}/public"
+          - "{{ project_root }}/index.html"
+          - "{{ project_root }}/vite.config.ts"
+          - "{{ project_root }}/components.json"
+          - "{{ project_root }}/package.json"
+          - "{{ project_root }}/package-lock.json"
+          - "{{ project_root }}/drizzle.config.ts"
+          - "{{ project_root }}/drizzle"
+          - "{{ project_root }}/Dockerfile"
+          - "{{ project_root }}/.dockerignore"
+          - "{{ project_root }}/docker-compose.yml"
+          - "{{ project_root }}/tsconfig.json"
+          - "{{ project_root }}/eslint.config.mjs"
         dest: "/tmp/notificurom_app.tar.gz"
         format: gz
       delegate_to: localhost

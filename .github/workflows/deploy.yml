@@ -16,10 +16,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Collection Dependencies
+        working-directory: ansible
         run: |
           ansible-galaxy collection install -r requirements.yml --upgrade
 
       - name: Run Ansible Playbook
+        working-directory: ansible
         env:
           INCUS_HOST_IP: ${{ vars.INCUS_HOST_IP }}
           INCUS_HOST_USER: ${{ vars.INCUS_HOST_USER }}
