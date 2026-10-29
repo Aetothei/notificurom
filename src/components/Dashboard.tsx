@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Task } from '@/db/schema';
 import { SyncResult } from '@/lib/types';
 import { Navbar, UserSessionInfo } from './Navbar';
@@ -6,6 +6,7 @@ import { KanbanBoard } from './KanbanBoard';
 import { SettingsModal } from './SettingsModal';
 import { THEME } from '@/config/theme';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { notifyNewTask } from '@/lib/notifications';
 
 interface DashboardProps {
   initialTasks: Task[];
@@ -29,7 +30,8 @@ export function Dashboard({
   const [isConfigured, setIsConfigured] = useState(initialIsConfigured);
   const [user, setUser] = useState<UserSessionInfo | null>(initialUser);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(initialLastSync);
-  const [syncIntervalMins, setSyncIntervalMins] = useState(15);
+  const [syncIntervalMins, setSyncIntervalMins] = useState(2);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [justSynced, setJustSynced] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
@@ -37,6 +39,38 @@ export function Dashboard({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [banner, setBanner] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(
     initialBanner
+  );
+
+  // Keep track of tasks we have already seen to only notify for brand-new ones
+  const knownTaskIdsRef = useRef<Set<string>>(new Set(initialTasks.map((t) => t.id)));
+  const initialLoadDoneRef = useRef(false);
+
+  useEffect(() => {
+    if (!initialLoadDoneRef.current) {
+      initialTasks.forEach((t) => knownTaskIdsRef.current.add(t.id));
+      initialLoadDoneRef.current = true;
+    }
+  }, [initialTasks]);
+
+  const checkAndNotifyNewTasks = useCallback(
+    (newTasks: Task[]) => {
+      if (!initialLoadDoneRef.current) {
+        newTasks.forEach((t) => knownTaskIdsRef.current.add(t.id));
+        initialLoadDoneRef.current = true;
+        return;
+      }
+
+      const brandNew = newTasks.filter((t) => !knownTaskIdsRef.current.has(t.id));
+      newTasks.forEach((t) => knownTaskIdsRef.current.add(t.id));
+
+      if (notificationsEnabled && brandNew.length > 0) {
+        // Notify for incoming new tasks
+        brandNew.forEach((task) => {
+          notifyNewTask(task);
+        });
+      }
+    },
+    [notificationsEnabled]
   );
 
   const handleClearFilters = useCallback(() => {
@@ -53,7 +87,9 @@ export function Dashboard({
       }
       if (res.ok) {
         const data = await res.json();
-        setTasks(data.tasks || []);
+        const incomingTasks = data.tasks || [];
+        setTasks(incomingTasks);
+        checkAndNotifyNewTasks(incomingTasks);
         if (data.lastSyncTime) {
           setLastSyncTime(data.lastSyncTime);
         }
@@ -61,7 +97,7 @@ export function Dashboard({
     } catch (err) {
       console.error('Failed to reload tasks', err);
     }
-  }, []);
+  }, [checkAndNotifyNewTasks]);
 
   const handleSync = useCallback(async () => {
     try {
@@ -99,6 +135,7 @@ export function Dashboard({
           }
           if (githubRes.tasks) {
             setTasks(githubRes.tasks);
+            checkAndNotifyNewTasks(githubRes.tasks);
           } else {
             await refreshTasks();
           }
@@ -120,7 +157,7 @@ export function Dashboard({
     } finally {
       setIsSyncing(false);
     }
-  }, [refreshTasks]);
+  }, [checkAndNotifyNewTasks, refreshTasks]);
 
   const checkSettingsAndStatus = useCallback(async () => {
     try {
@@ -141,6 +178,9 @@ export function Dashboard({
         const sData = await settingsRes.json();
         if (typeof sData.syncIntervalMinutes === 'number') {
           setSyncIntervalMins(sData.syncIntervalMinutes);
+        }
+        if (typeof sData.notificationsEnabled === 'boolean') {
+          setNotificationsEnabled(sData.notificationsEnabled);
         }
       }
     } catch {
@@ -178,6 +218,9 @@ export function Dashboard({
           const sData = await settingsRes.json();
           if (!isCancelled && typeof sData.syncIntervalMinutes === 'number') {
             setSyncIntervalMins(sData.syncIntervalMinutes);
+          }
+          if (!isCancelled && typeof sData.notificationsEnabled === 'boolean') {
+            setNotificationsEnabled(sData.notificationsEnabled);
           }
         }
       } catch {

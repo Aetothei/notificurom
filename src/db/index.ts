@@ -39,10 +39,18 @@ export function initializeDb() {
     CREATE TABLE IF NOT EXISTS user_preferences (
       user_hash TEXT PRIMARY KEY,
       auto_archive_closed INTEGER NOT NULL DEFAULT 1,
-      sync_interval_mins INTEGER NOT NULL DEFAULT 15,
+      sync_interval_mins INTEGER NOT NULL DEFAULT 2,
+      notifications_enabled INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
   `);
+
+  // Safe migration for existing databases missing notifications_enabled
+  try {
+    sqlite.exec('ALTER TABLE user_preferences ADD COLUMN notifications_enabled INTEGER NOT NULL DEFAULT 0;');
+  } catch {
+    // Column already exists
+  }
 }
 
 initializeDb();

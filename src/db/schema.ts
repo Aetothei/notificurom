@@ -28,7 +28,8 @@ export const taskStates = sqliteTable(
 export const userPreferences = sqliteTable('user_preferences', {
   userHash: text('user_hash').primaryKey(),
   autoArchiveClosed: integer('auto_archive_closed', { mode: 'boolean' }).notNull().default(true),
-  syncIntervalMins: integer('sync_interval_mins').notNull().default(15),
+  syncIntervalMins: integer('sync_interval_mins').notNull().default(2),
+  notificationsEnabled: integer('notifications_enabled', { mode: 'boolean' }).notNull().default(false),
   updatedAt: text('updated_at').notNull(),
 });
 

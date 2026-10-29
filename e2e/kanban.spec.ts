@@ -286,11 +286,13 @@ test.describe('Notificurom Kanban Board', () => {
       data: {
         autoArchiveClosed: true,
         syncIntervalMinutes: 20,
+        notificationsEnabled: true,
       },
     });
     expect(saveSettingsRes.ok()).toBeTruthy();
     const savedData = await saveSettingsRes.json();
     expect(savedData.syncIntervalMinutes).toBe(20);
+    expect(savedData.notificationsEnabled).toBe(true);
 
     // 3. GET /api/auth/github/login redirects to GitHub with repo scope
     const loginRes = await request.get('/api/auth/github/login', { maxRedirects: 0 });
@@ -320,7 +322,8 @@ test.describe('Notificurom Kanban Board', () => {
 
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
     await expect(page.getByText('Mona Lisa Octocat')).toBeVisible();
-    await expect(page.getByText('Polling Interval')).toBeVisible();
+    await expect(page.getByText('Browser Desktop Notifications')).toBeVisible();
+    await expect(page.getByText('Auto-sync Interval')).toBeVisible();
     await expect(page.getByText('Wipe Board Data')).toBeVisible();
 
     // Verify confirmation flow on Wipe Board Data

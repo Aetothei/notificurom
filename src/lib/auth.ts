@@ -27,6 +27,7 @@ export interface SessionCookiePayload {
 export interface DecryptedUserPreferences {
   autoArchiveClosed: boolean;
   syncIntervalMins: number;
+  notificationsEnabled: boolean;
 }
 
 export interface AuthenticatedContext {
@@ -198,6 +199,7 @@ export function getUserPreferences(userHash: string): DecryptedUserPreferences {
     return {
       autoArchiveClosed: existing.autoArchiveClosed,
       syncIntervalMins: existing.syncIntervalMins,
+      notificationsEnabled: existing.notificationsEnabled ?? false,
     };
   }
 
@@ -206,7 +208,8 @@ export function getUserPreferences(userHash: string): DecryptedUserPreferences {
     .values({
       userHash,
       autoArchiveClosed: true,
-      syncIntervalMins: 15,
+      syncIntervalMins: 2,
+      notificationsEnabled: false,
       updatedAt: now,
     })
     .onConflictDoNothing()
@@ -214,7 +217,8 @@ export function getUserPreferences(userHash: string): DecryptedUserPreferences {
 
   return {
     autoArchiveClosed: true,
-    syncIntervalMins: 15,
+    syncIntervalMins: 2,
+    notificationsEnabled: false,
   };
 }
 
@@ -229,11 +233,16 @@ export function saveUserPreferences(
     updates.autoArchiveClosed !== undefined ? updates.autoArchiveClosed : current.autoArchiveClosed;
   const nextSyncInterval =
     updates.syncIntervalMins !== undefined ? updates.syncIntervalMins : current.syncIntervalMins;
+  const nextNotificationsEnabled =
+    updates.notificationsEnabled !== undefined
+      ? updates.notificationsEnabled
+      : current.notificationsEnabled;
 
   db.update(userPreferences)
     .set({
       autoArchiveClosed: nextAutoArchive,
       syncIntervalMins: nextSyncInterval,
+      notificationsEnabled: nextNotificationsEnabled,
       updatedAt: now,
     })
     .where(eq(userPreferences.userHash, userHash))
@@ -242,5 +251,6 @@ export function saveUserPreferences(
   return {
     autoArchiveClosed: nextAutoArchive,
     syncIntervalMins: nextSyncInterval,
+    notificationsEnabled: nextNotificationsEnabled,
   };
 }
