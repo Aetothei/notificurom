@@ -6,10 +6,17 @@ import {
   AlertCircle,
   LogOut,
   Trash2,
+  Bell,
+  BellOff,
 } from 'lucide-react';
 import { GlassModal } from './GlassModal';
 import { Button } from './ui/button';
 import { UserSessionInfo } from './Navbar';
+import {
+  getNotificationPermission,
+  requestNotificationPermission,
+  notifyNewTask,
+} from '@/lib/notifications';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,7 +29,9 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
   const [user, setUser] = useState<UserSessionInfo | null>(null);
 
   const [autoArchive, setAutoArchive] = useState(true);
-  const [syncInterval, setSyncInterval] = useState(15);
+  const [syncInterval, setSyncInterval] = useState(2);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [browserPermission, setBrowserPermission] = useState<NotificationPermission | 'unsupported'>('default');
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -38,6 +47,7 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
     if (!isOpen) return;
 
     let isMounted = true;
+    setBrowserPermission(getNotificationPermission());
 
     async function loadData() {
       try {
@@ -48,7 +58,8 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
           setIsConnected(data.isConnected || false);
           setUser(data.user || null);
           setAutoArchive(data.autoArchiveClosed ?? true);
-          setSyncInterval(data.syncIntervalMinutes || 15);
+          setSyncInterval(data.syncIntervalMinutes || 2);
+          setNotificationsEnabled(Boolean(data.notificationsEnabled));
         }
       } catch (err) {
         console.error('Failed to load settings', err);
@@ -65,6 +76,58 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
       isMounted = false;
     };
   }, [isOpen]);
+
+  const handleToggleNotifications = async (enabled: boolean) => {
+    if (enabled) {
+      const granted = await requestNotificationPermission();
+      setBrowserPermission(getNotificationPermission());
+      if (granted) {
+        setNotificationsEnabled(true);
+      } else {
+        setNotificationsEnabled(false);
+        setStatusMessage({
+          type: 'error',
+          text: 'Browser notification permission was not granted.',
+        });
+      }
+    } else {
+      setNotificationsEnabled(false);
+    }
+  };
+
+  const handleTestNotification = () => {
+    const n = notifyNewTask({
+      id: 'test-notification',
+      source: 'github',
+      sourceType: 'review_request',
+      sourceId: '#1',
+      title: 'Test Notification: Browser alerts are working cleanly!',
+      url: window.location.href,
+      repository: 'Aetothei/notificurom',
+      author: user?.login || 'you',
+      authorAvatarUrl: user?.avatarUrl || null,
+      status: 'inbox',
+      sortOrder: 0,
+      isClosed: false,
+      metadata: null,
+      sourceCreatedAt: new Date().toISOString(),
+      sourceUpdatedAt: null,
+      statusUpdatedAt: new Date().toISOString(),
+    });
+
+    if (!n) {
+      setStatusMessage({
+        type: 'error',
+        text: 'Could not send test notification. Check browser permissions.',
+      });
+    } else {
+      setStatusMessage({
+        type: 'success',
+        text: 'Test notification sent!',
+      });
+      setTimeout(() => setStatusMessage(null), 3000);
+    }
+  };
 
   const handleDisconnect = async () => {
     try {
@@ -111,6 +174,7 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
       const payload = {
         autoArchiveClosed: autoArchive,
         syncIntervalMinutes: Number(syncInterval),
+        notificationsEnabled,
       };
 
       const res = await fetch('/api/settings', {
@@ -125,7 +189,8 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
         setIsConnected(data.isConnected || false);
         setUser(data.user || null);
         setAutoArchive(data.autoArchiveClosed ?? true);
-        setSyncInterval(data.syncIntervalMinutes || 15);
+        setSyncInterval(data.syncIntervalMinutes || 2);
+        setNotificationsEnabled(Boolean(data.notificationsEnabled));
         onSaveSuccess?.();
         setTimeout(() => setStatusMessage(null), 3000);
       } else {
@@ -220,12 +285,59 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
           {/* Sync Interval & Auto-archive */}
           <div className="space-y-3">
             <label className="block text-xs font-bold uppercase tracking-widest text-zinc-400">
-              Sync & Automation
+              Sync & Notifications
             </label>
+
+            {/* Desktop Notifications Toggle */}
+            <div className="p-3.5 rounded-2xl bg-white/[0.04] flex flex-col gap-2.5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2.5">
+                  {notificationsEnabled ? (
+                    <Bell className="w-4 h-4 text-amber-400 shrink-0" />
+                  ) : (
+                    <BellOff className="w-4 h-4 text-zinc-500 shrink-0" />
+                  )}
+                  <div>
+                    <div className="text-xs font-semibold text-zinc-100">
+                      Browser Desktop Notifications
+                    </div>
+                    <div className="text-[11px] text-zinc-400">
+                      Alert when a new review request, PR, or issue arrives
+                    </div>
+                  </div>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={notificationsEnabled}
+                    onChange={(e) => handleToggleNotifications(e.target.checked)}
+                    disabled={browserPermission === 'unsupported'}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
+              </div>
+
+              {notificationsEnabled && (
+                <div className="pt-1 flex items-center justify-between border-t border-white/[0.06]">
+                  <span className="text-[11px] text-emerald-400 font-medium">
+                    ✓ Browser permission: {browserPermission}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleTestNotification}
+                    className="text-[11px] text-amber-400 hover:text-amber-300 underline font-medium transition-colors cursor-pointer"
+                  >
+                    Send test alert
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div className="flex items-center justify-between gap-4 p-3.5 rounded-2xl bg-white/[0.04]">
               <div>
-                <div className="text-xs font-semibold text-zinc-100">Polling Interval</div>
+                <div className="text-xs font-semibold text-zinc-100">Auto-sync Interval</div>
                 <div className="text-[11px] text-zinc-400">
                   Background refresh frequency while open (minutes)
                 </div>
@@ -235,7 +347,7 @@ export function SettingsModal({ isOpen, onClose, onSaveSuccess }: SettingsModalP
                 min="1"
                 max="1440"
                 value={syncInterval}
-                onChange={(e) => setSyncInterval(parseInt(e.target.value, 10) || 15)}
+                onChange={(e) => setSyncInterval(parseInt(e.target.value, 10) || 2)}
                 className="w-20 rounded-full bg-white/[0.06] px-3 py-1.5 text-xs text-center font-mono focus:outline-none focus:bg-white/[0.1] text-zinc-100"
               />
             </div>

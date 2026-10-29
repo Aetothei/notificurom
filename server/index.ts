@@ -351,6 +351,7 @@ const server = http.createServer(async (req, res) => {
           },
           autoArchiveClosed: authContext.preferences.autoArchiveClosed,
           syncIntervalMinutes: authContext.preferences.syncIntervalMins,
+          notificationsEnabled: authContext.preferences.notificationsEnabled,
         });
       }
 
@@ -361,6 +362,8 @@ const server = http.createServer(async (req, res) => {
             typeof body.autoArchiveClosed === 'boolean' ? body.autoArchiveClosed : undefined,
           syncIntervalMins:
             typeof body.syncIntervalMinutes === 'number' ? body.syncIntervalMinutes : undefined,
+          notificationsEnabled:
+            typeof body.notificationsEnabled === 'boolean' ? body.notificationsEnabled : undefined,
         });
 
         clearUserRamCache(authContext.userHash);
@@ -376,6 +379,7 @@ const server = http.createServer(async (req, res) => {
           },
           autoArchiveClosed: updatedPrefs.autoArchiveClosed,
           syncIntervalMinutes: updatedPrefs.syncIntervalMins,
+          notificationsEnabled: updatedPrefs.notificationsEnabled,
         });
       }
 
