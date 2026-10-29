@@ -1,89 +1,68 @@
-import { db } from '@/db';
-import { settings } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-
 export interface SystemConfig {
   githubClientId: string;
   githubClientSecret: string;
-  cronSecret: string;
+  githubOAuthScopes: string;
+  allowedGithubUsers: string[];
 }
 
-export async function getSetting(key: string, defaultValue = ''): Promise<string> {
-  try {
-    const result = db.select().from(settings).where(eq(settings.key, key)).get();
-    if (result && result.value !== undefined) {
-      return result.value;
-    }
-  } catch {
-    // ignore db read errors during bootstrap
-  }
-  return defaultValue;
-}
+export function getSystemConfig(): SystemConfig {
+  const githubClientId = (process.env.GITHUB_CLIENT_ID || process.env.GH_CLIENT_ID || '').trim();
+  const githubClientSecret = (
+    process.env.GITHUB_CLIENT_SECRET ||
+    process.env.GH_CLIENT_SECRET ||
+    ''
+  ).trim();
 
-export async function setSetting(key: string, value: string): Promise<void> {
-  const now = new Date().toISOString();
-  db.insert(settings)
-    .values({ key, value, updatedAt: now })
-    .onConflictDoUpdate({
-      target: settings.key,
-      set: { value, updatedAt: now },
-    })
-    .run();
-}
+  // Default to 'repo,read:user' for classic OAuth apps to allow reading private PRs/issues across orgs.
+  // Can be set to empty string via GITHUB_OAUTH_SCOPES="" if using a fine-grained GitHub App.
+  const githubOAuthScopes = (process.env.GITHUB_OAUTH_SCOPES ?? 'repo,read:user').trim();
 
-export async function deleteSetting(key: string): Promise<void> {
-  try {
-    db.delete(settings).where(eq(settings.key, key)).run();
-  } catch {
-    // ignore db delete errors
-  }
-}
-
-export async function getSystemConfig(): Promise<SystemConfig> {
-  const envClientId = process.env.GITHUB_CLIENT_ID || process.env.GH_CLIENT_ID || '';
-  const dbClientId = await getSetting('github_client_id', '');
-  const githubClientId = dbClientId || envClientId;
-
-  const envClientSecret = process.env.GITHUB_CLIENT_SECRET || process.env.GH_CLIENT_SECRET || '';
-  const dbClientSecret = await getSetting('github_client_secret', '');
-  const githubClientSecret = dbClientSecret || envClientSecret;
-
-  const cronSecret = process.env.CRON_SECRET || '';
+  const rawAllowed = process.env.ALLOWED_GITHUB_USERS || '';
+  const allowedGithubUsers = rawAllowed
+    .split(',')
+    .map((u) => u.trim().toLowerCase())
+    .filter(Boolean);
 
   return {
     githubClientId,
     githubClientSecret,
-    cronSecret,
+    githubOAuthScopes,
+    allowedGithubUsers,
   };
 }
 
-export async function saveSystemConfig(config: Partial<SystemConfig>): Promise<void> {
-  if (config.githubClientId !== undefined) {
-    await setSetting('github_client_id', config.githubClientId);
+export function isUserAllowed(login: string): boolean {
+  const { allowedGithubUsers } = getSystemConfig();
+  if (allowedGithubUsers.length === 0) {
+    return true;
   }
-  if (config.githubClientSecret !== undefined) {
-    await setSetting('github_client_secret', config.githubClientSecret);
-  }
+  return allowedGithubUsers.includes(login.trim().toLowerCase());
 }
 
-export function getBaseUrl(req?: { headers: Headers; url?: string; nextUrl?: { origin: string } }): string {
+export function getBaseUrlFromNodeHeaders(
+  headers: Record<string, string | string[] | undefined>
+): string {
   if (process.env.APP_URL) {
     return process.env.APP_URL.replace(/\/$/, '');
   }
-  if (req) {
-    const forwardedHost = req.headers.get('x-forwarded-host');
-    const forwardedProto = req.headers.get('x-forwarded-proto') || 'https';
-    if (forwardedHost) {
-      return `${forwardedProto}://${forwardedHost}`;
-    }
-    const host = req.headers.get('host');
-    if (host && !host.includes('0.0.0.0') && !host.includes('localhost') && !host.includes('.incus')) {
-      const proto = req.url?.startsWith('https') ? 'https' : 'http';
-      return `${proto}://${host}`;
-    }
-    if (req.nextUrl?.origin) {
-      return req.nextUrl.origin;
-    }
+  const forwardedHost = Array.isArray(headers['x-forwarded-host'])
+    ? headers['x-forwarded-host'][0]
+    : headers['x-forwarded-host'];
+  const forwardedProto =
+    (Array.isArray(headers['x-forwarded-proto'])
+      ? headers['x-forwarded-proto'][0]
+      : headers['x-forwarded-proto']) || 'https';
+
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
   }
+
+  const host = Array.isArray(headers['host']) ? headers['host'][0] : headers['host'];
+  if (host) {
+    const isLocal =
+      host.includes('localhost') || host.includes('127.0.0.1') || host.includes('0.0.0.0');
+    return `${isLocal ? 'http' : 'https'}://${host}`;
+  }
+
   return 'http://localhost:3000';
 }

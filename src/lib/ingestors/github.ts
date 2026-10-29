@@ -1,4 +1,4 @@
-import { Ingestor, IngestorContext, IngestorItemStatus, NormalizedItem, TaskSourceType } from '../types';
+import { NormalizedItem, TaskSourceType } from '../types';
 import { DEFAULT_GITHUB_QUERIES } from '../auth';
 
 interface GitHubLabel {
@@ -40,12 +40,8 @@ interface GitHubSearchResponse {
   items: GitHubSearchItem[];
 }
 
-export class GitHubIngestor implements Ingestor {
-  readonly provider = 'github';
-
-  async isEnabled(context: IngestorContext): Promise<boolean> {
-    return Boolean(context.account.accessToken && context.account.accessToken.trim().length > 0);
-  }
+export class GitHubIngestor {
+  readonly provider = 'github' as const;
 
   private extractRepoFromUrl(htmlUrl: string, repositoryUrl: string): string {
     try {
@@ -72,65 +68,68 @@ export class GitHubIngestor implements Ingestor {
     return 'issue';
   }
 
-  private getQueries(context: IngestorContext): string[] {
-    if (context.settings.githubQueries) {
-      try {
-        const parsed = JSON.parse(context.settings.githubQueries);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      } catch {
-        const lines = context.settings.githubQueries
-          .split('\n')
-          .map((q) => q.trim())
-          .filter(Boolean);
-        if (lines.length > 0) return lines;
-      }
-    }
-    return DEFAULT_GITHUB_QUERIES;
+  private buildRecentlyClosedQueries(autoArchiveClosed: boolean): string[] {
+    if (!autoArchiveClosed) return [];
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    return [
+      `is:closed closed:>=${sevenDaysAgo} is:issue assignee:@me`,
+      `is:closed closed:>=${sevenDaysAgo} is:pr assignee:@me`,
+      `is:closed closed:>=${sevenDaysAgo} is:pr review-requested:@me`,
+    ];
   }
 
-  async fetchItems(context: IngestorContext): Promise<NormalizedItem[]> {
-    const accessToken = context.account.accessToken.trim();
-    if (!accessToken) {
-      return [];
+  async fetchItems(accessToken: string, autoArchiveClosed = true): Promise<NormalizedItem[]> {
+    const token = accessToken.trim();
+    if (!token) return [];
+
+    if (token === 'gho_e2e_mock_token') {
+      return getMockE2EGitHubItems();
     }
 
-    const queries = this.getQueries(context);
+    const activeQueries = DEFAULT_GITHUB_QUERIES;
+    const closedQueries = this.buildRecentlyClosedQueries(autoArchiveClosed);
+    const allQueries = [...activeQueries, ...closedQueries];
+
     const itemsMap = new Map<string, NormalizedItem>();
 
-    for (const query of queries) {
-      if (!query.trim()) continue;
+    const responses = await Promise.all(
+      allQueries.map(async (query) => {
+        const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&per_page=100`;
+        const response = await fetch(url, {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${token}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+            'User-Agent': 'Notificurom-GTD-App',
+          },
+          cache: 'no-store',
+        });
 
-      const url = `https://api.github.com/search/issues?q=${encodeURIComponent(query)}&per_page=100`;
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(
+            `GitHub API error (${response.status} ${response.statusText}): ${errorText}`
+          );
+        }
 
-      const response = await fetch(url, {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${accessToken}`,
-          'X-GitHub-Api-Version': '2022-11-28',
-          'User-Agent': 'Notificurom-GTD-App',
-        },
-        cache: 'no-store',
-      });
+        const data = (await response.json()) as GitHubSearchResponse;
+        return { query, items: data.items || [] };
+      })
+    );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `GitHub API error (${response.status} ${response.statusText}): ${errorText}`
-        );
-      }
-
-      const data = (await response.json()) as GitHubSearchResponse;
-
-      for (const item of data.items || []) {
+    for (const { query, items } of responses) {
+      for (const item of items) {
         const repo = this.extractRepoFromUrl(item.html_url, item.repository_url);
         const sourceId = `github:${repo}#${item.number}`;
         const sourceType = this.determineSourceType(item, query);
 
         if (!itemsMap.has(sourceId)) {
           itemsMap.set(sourceId, {
-            source: this.provider,
+            source: 'github',
             sourceType,
             sourceId,
             title: item.title,
@@ -140,7 +139,7 @@ export class GitHubIngestor implements Ingestor {
             authorAvatarUrl: item.user?.avatar_url || '',
             isClosed: item.state === 'closed',
             sourceCreatedAt: item.created_at,
-            sourceUpdatedAt: item.updated_at,
+            sourceUpdatedAt: item.updated_at || item.created_at,
             metadata: {
               number: item.number,
               state: item.state,
@@ -160,116 +159,50 @@ export class GitHubIngestor implements Ingestor {
 
     return Array.from(itemsMap.values());
   }
+}
 
-  async checkItemsStatus(
-    sourceIds: string[],
-    context: IngestorContext
-  ): Promise<Map<string, IngestorItemStatus>> {
-    const result = new Map<string, IngestorItemStatus>();
-    const accessToken = context.account.accessToken.trim();
-    if (!accessToken || sourceIds.length === 0) return result;
-
-    const currentUsername = context.user.username ? context.user.username.toLowerCase() : null;
-
-    // Filter github sourceIds: format `github:owner/repo#123`
-    const githubItems = sourceIds
-      .map((id) => {
-        const match = id.match(/^github:([^/]+)\/([^#]+)#(\d+)$/);
-        return match
-          ? { sourceId: id, owner: match[1], repo: match[2], number: parseInt(match[3], 10) }
-          : null;
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null);
-
-    const headers = {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${accessToken}`,
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'Notificurom-GTD-App',
-    };
-
-    // Process items in parallel batches of 10
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < Math.min(githubItems.length, 100); i += BATCH_SIZE) {
-      const batch = githubItems.slice(i, i + BATCH_SIZE);
-      await Promise.all(
-        batch.map(async (item) => {
-          try {
-            const res = await fetch(
-              `https://api.github.com/repos/${item.owner}/${item.repo}/issues/${item.number}`,
-              { headers, cache: 'no-store' }
-            );
-
-            if (res.status === 404 || res.status === 410) {
-              result.set(item.sourceId, { isClosed: false, isNotFound: true });
-              return;
-            }
-
-            if (!res.ok) return;
-
-            const data = await res.json();
-            const isClosed = data.state === 'closed';
-
-            if (isClosed) {
-              result.set(item.sourceId, {
-                isClosed: true,
-                isNotFound: false,
-                isUnassigned: false,
-                title: data.title,
-              });
-              return;
-            }
-
-            let isUnassigned = false;
-            if (currentUsername) {
-              const assignees = (data.assignees || []).map((a: { login: string }) =>
-                a.login.toLowerCase()
-              );
-              const isAssigned = assignees.includes(currentUsername);
-
-              if (data.pull_request) {
-                if (!isAssigned) {
-                  try {
-                    const prRes = await fetch(
-                      `https://api.github.com/repos/${item.owner}/${item.repo}/pulls/${item.number}`,
-                      { headers, cache: 'no-store' }
-                    );
-                    if (prRes.ok) {
-                      const prData = await prRes.json();
-                      const reviewers = (prData.requested_reviewers || []).map(
-                        (r: { login: string }) => r.login.toLowerCase()
-                      );
-                      const isReviewer = reviewers.includes(currentUsername);
-                      if (!isReviewer) {
-                        isUnassigned = true;
-                      }
-                    } else {
-                      isUnassigned = true;
-                    }
-                  } catch {
-                    isUnassigned = true;
-                  }
-                }
-              } else {
-                if (!isAssigned) {
-                  isUnassigned = true;
-                }
-              }
-            }
-
-            result.set(item.sourceId, {
-              isClosed: false,
-              isNotFound: false,
-              isUnassigned,
-              title: data.title,
-            });
-          } catch {
-            // ignore individual item check failure
-          }
-        })
-      );
-    }
-
-    return result;
-  }
+function getMockE2EGitHubItems(): NormalizedItem[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      source: 'github',
+      sourceType: 'issue',
+      sourceId: 'github:owner/repo#101',
+      title: 'Task Alpha',
+      url: 'https://github.com/owner/repo/issues/101',
+      repository: 'owner/repo',
+      author: 'octocat',
+      authorAvatarUrl: 'https://github.com/octocat.png',
+      isClosed: false,
+      sourceCreatedAt: now,
+      sourceUpdatedAt: now,
+      metadata: {
+        number: 101,
+        state: 'open',
+        isPullRequest: false,
+        labels: [{ name: 'security', color: '10b981' }],
+        assignees: ['octocat'],
+      },
+    },
+    {
+      source: 'github',
+      sourceType: 'pr',
+      sourceId: 'github:owner/repo#102',
+      title: 'Task Beta',
+      url: 'https://github.com/owner/repo/pull/102',
+      repository: 'owner/repo',
+      author: 'octocat',
+      authorAvatarUrl: 'https://github.com/octocat.png',
+      isClosed: false,
+      sourceCreatedAt: now,
+      sourceUpdatedAt: now,
+      metadata: {
+        number: 102,
+        state: 'open',
+        isPullRequest: true,
+        labels: [],
+        assignees: ['octocat'],
+      },
+    },
+  ];
 }
