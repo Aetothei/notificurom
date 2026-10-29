@@ -233,7 +233,7 @@ export function Dashboard({
       </div>
 
       {/* 2. Main Dashboard Container */}
-      <div className="relative z-10 w-full max-w-[1920px] mx-auto px-6 py-6 flex flex-col gap-5">
+      <div className="relative z-10 w-full max-w-[1920px] mx-auto px-4 py-4 flex flex-col gap-4">
         <Navbar
           onSync={handleSync}
           isSyncing={isSyncing}
@@ -245,7 +245,6 @@ export function Dashboard({
           onSourceFilterChange={setSourceFilter}
           onClearFilters={handleClearFilters}
           onOpenSettings={() => setIsSettingsOpen(true)}
-          totalTaskCount={tasks.filter((t) => t.status !== 'done').length}
           isConnected={isConnected}
           isConfigured={isConfigured}
           user={user}

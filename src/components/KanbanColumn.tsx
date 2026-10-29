@@ -71,7 +71,7 @@ export function KanbanColumn({
         const nextIdx = (modes.indexOf(sortMode) + 1) % modes.length;
         setSortMode(modes[nextIdx]);
       }}
-      className={`px-2.5 py-1 text-xs rounded-full flex items-center gap-1 transition-all cursor-pointer ${
+      className={`px-2 py-1 text-xs rounded-full flex items-center gap-1 transition-all cursor-pointer ${
         sortMode !== 'default'
           ? 'bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
           : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06]'
@@ -90,7 +90,7 @@ export function KanbanColumn({
       ref={setNodeRef}
       data-column-id={id}
       data-testid={`column-${id}`}
-      className={`flex flex-col w-full rounded-3xl bg-white/[0.025] backdrop-blur-xl p-4 transition-all ${
+      className={`flex flex-col w-full rounded-3xl bg-white/[0.025] backdrop-blur-xl p-3 transition-all ${
         isOver
           ? 'bg-amber-500/[0.06] shadow-[0_0_28px_rgba(245,158,11,0.14)]'
           : ''
@@ -101,10 +101,10 @@ export function KanbanColumn({
         icon={COLUMN_ICONS[id]}
         count={tasks.length}
         rightSlot={sortButton}
-        className="mb-3.5 px-1"
+        className="mb-3 px-1"
       />
 
-      <div className="flex-1 flex flex-col gap-2.5 overflow-y-auto max-h-[calc(100vh-190px)] min-h-[200px]">
+      <div className="flex-1 flex flex-col gap-2.5 overflow-y-auto max-h-[calc(100vh-160px)]">
         <SortableContext
           items={sortedTasks.map((t) => t.id)}
           strategy={verticalListSortingStrategy}
@@ -121,9 +121,9 @@ export function KanbanColumn({
         </SortableContext>
 
         {sortedTasks.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 rounded-2xl bg-white/[0.02] text-center text-zinc-500 text-xs gap-2">
+          <div className="py-10 flex flex-col items-center justify-center text-center text-zinc-600 text-xs gap-1.5">
             <span>
-              {hasActiveFilters ? 'No tasks match filters' : `No items in ${title.toLowerCase()}`}
+              {hasActiveFilters ? 'No matching items' : `No items in ${title.toLowerCase()}`}
             </span>
             {hasActiveFilters && onClearFilters && (
               <button

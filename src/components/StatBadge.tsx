@@ -40,7 +40,7 @@ export const StatBadge: React.FC<StatBadgeProps> = ({
     <div
       onClick={onClick}
       title={title}
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium backdrop-blur-md transition-all duration-150 select-none ${variantClass} ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium backdrop-blur-md transition-all duration-150 select-none whitespace-nowrap shrink-0 ${variantClass} ${
         isClickable
           ? 'cursor-pointer hover:bg-amber-500/20 hover:text-amber-300 hover:shadow-[0_0_12px_rgba(245,158,11,0.25)] active:scale-95'
           : ''

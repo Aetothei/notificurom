@@ -295,8 +295,11 @@ test.describe('Notificurom Kanban Board', () => {
     await page.goto('/');
     await expect(page.getByText('@octocat')).toBeVisible();
 
-    // Open settings via settings button in navbar
+    // Open user menu on the far right and click Settings
+    await page.getByText('@octocat').click();
+    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible();
     await page.getByRole('button', { name: 'Settings' }).click();
+
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
     await expect(page.getByText('Mona Lisa Octocat')).toBeVisible();
     await expect(page.getByText('Polling Interval')).toBeVisible();
