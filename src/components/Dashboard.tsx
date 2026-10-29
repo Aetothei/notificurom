@@ -277,7 +277,6 @@ export function Dashboard({
             setTasks={setTasks}
             searchFilter={searchFilter}
             sourceFilter={sourceFilter}
-            onSearchChange={setSearchFilter}
             onClearFilters={handleClearFilters}
           />
         </main>

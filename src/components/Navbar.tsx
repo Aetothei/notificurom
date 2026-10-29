@@ -150,15 +150,15 @@ export function Navbar({
 
         {/* Center: Search Pill + Glass Filter Capsule */}
         <div className="flex flex-wrap items-center gap-2 flex-1 max-w-2xl">
-          <div className="relative flex-1 min-w-[160px]">
-            <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+          <div className="flex items-center gap-2 flex-1 min-w-[160px] rounded-full bg-white/[0.04] hover:bg-white/[0.07] focus-within:bg-white/[0.08] backdrop-blur-xl px-3.5 py-1.5 transition-all">
+            <Search className="w-3.5 h-3.5 text-zinc-400 shrink-0 pointer-events-none" />
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Filter tasks..."
               value={searchFilter}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full rounded-full bg-white/[0.04] hover:bg-white/[0.07] focus:bg-white/[0.08] backdrop-blur-xl pl-9 pr-8 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none transition-all"
+              className="w-full bg-transparent text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
             />
             {searchFilter && (
               <button
@@ -167,7 +167,7 @@ export function Navbar({
                   onSearchChange('');
                   searchInputRef.current?.focus();
                 }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-0.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+                className="text-zinc-400 hover:text-zinc-200 p-0.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer shrink-0"
                 title="Clear search text"
               >
                 <X className="w-3.5 h-3.5" />

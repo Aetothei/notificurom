@@ -23,6 +23,7 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120000,
     env: {
+      DATABASE_URL: './data/test-e2e.db',
       GITHUB_CLIENT_ID: 'test_client_id_123',
       GITHUB_CLIENT_SECRET: 'test_client_secret_456',
       SESSION_SECRET: 'notificurom-default-dev-session-secret-change-in-prod-32b',

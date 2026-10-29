@@ -14,9 +14,7 @@ interface KanbanColumnProps {
   tasks: Task[];
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
-  onMoveColumn: (taskId: string, targetStatus: TaskStatus) => void;
   onDeleteTask: (taskId: string) => void;
-  onFilterRepo?: (repo: string) => void;
 }
 
 const COLUMN_ICONS: Record<TaskStatus, string> = {
@@ -33,9 +31,7 @@ export function KanbanColumn({
   tasks,
   hasActiveFilters = false,
   onClearFilters,
-  onMoveColumn,
   onDeleteTask,
-  onFilterRepo,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id,
@@ -113,9 +109,7 @@ export function KanbanColumn({
             <TaskCard
               key={task.id}
               task={task}
-              onMoveColumn={onMoveColumn}
               onDelete={onDeleteTask}
-              onFilterRepo={onFilterRepo}
             />
           ))}
         </SortableContext>

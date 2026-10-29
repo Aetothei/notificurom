@@ -21,7 +21,6 @@ interface KanbanBoardProps {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   searchFilter: string;
   sourceFilter: string;
-  onSearchChange?: (value: string) => void;
   onClearFilters?: () => void;
 }
 
@@ -38,7 +37,6 @@ export function KanbanBoard({
   setTasks,
   searchFilter,
   sourceFilter,
-  onSearchChange,
   onClearFilters,
 }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -64,25 +62,12 @@ export function KanbanBoard({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5, // 5px movement required before drag starts so clicks on links/buttons work naturally
+        distance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
-  );
-
-  const handleMoveColumn = useCallback(
-    async (taskId: string, targetStatus: TaskStatus) => {
-      const now = new Date().toISOString();
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId ? { ...t, status: targetStatus, statusUpdatedAt: now } : t
-        )
-      );
-      await updateServerTask(taskId, targetStatus);
-    },
-    [setTasks, updateServerTask]
   );
 
   const handleDeleteTask = useCallback(
@@ -95,18 +80,6 @@ export function KanbanBoard({
       }
     },
     [setTasks]
-  );
-
-  const handleFilterRepo = useCallback(
-    (repo: string) => {
-      if (!onSearchChange) return;
-      if (searchFilter.trim().toLowerCase() === repo.toLowerCase()) {
-        onSearchChange('');
-      } else {
-        onSearchChange(repo);
-      }
-    },
-    [searchFilter, onSearchChange]
   );
 
   const onDragStart = (event: DragStartEvent) => {
@@ -265,9 +238,7 @@ export function KanbanBoard({
               tasks={colTasks}
               hasActiveFilters={Boolean(searchFilter.trim()) || sourceFilter !== 'all'}
               onClearFilters={onClearFilters}
-              onMoveColumn={handleMoveColumn}
               onDeleteTask={handleDeleteTask}
-              onFilterRepo={handleFilterRepo}
             />
           );
         })}

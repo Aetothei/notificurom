@@ -15,7 +15,6 @@ export function AgeBadge({ sourceCreatedAt, statusUpdatedAt, isDone = false }: A
         icon="mdi:check-circle-outline"
         value="Done"
         variant="teal"
-        className="px-2.5 py-0.5 text-[11px]"
       />
     );
   }
@@ -39,7 +38,6 @@ export function AgeBadge({ sourceCreatedAt, statusUpdatedAt, isDone = false }: A
       value={`Age ${createdAgeText}`}
       variant={variantMap[urgency] || 'neutral'}
       title={`Age: ${createdAgeText} (${totalDays}d ago) • In this column: ${stalledAgeText} (${stalledDays}d)`}
-      className="px-2.5 py-0.5 text-[11px]"
     />
   );
 }

@@ -20,7 +20,7 @@ function getEncryptedTestSessionCookie(): string {
 }
 
 function resetTestDatabase() {
-  const dbPath = process.env.DATABASE_URL || path.join(process.cwd(), 'data', 'notificurom.db');
+  const dbPath = process.env.DATABASE_URL || path.join(process.cwd(), 'data', 'test-e2e.db');
   const sqlite = new Database(dbPath);
   sqlite.pragma('journal_mode = WAL');
   sqlite.exec(`
@@ -90,7 +90,7 @@ test.describe('Notificurom Kanban Board', () => {
     await expect(page.getByText(/Age (just now|\d+[mhd])/).first()).toBeVisible();
     expect(consoleIssues).toEqual([]);
 
-    const dbPath = process.env.DATABASE_URL || path.join(process.cwd(), 'data', 'notificurom.db');
+    const dbPath = process.env.DATABASE_URL || path.join(process.cwd(), 'data', 'test-e2e.db');
     const sqlite = new Database(dbPath, { readonly: true });
     const tables = sqlite
       .prepare("SELECT name FROM sqlite_master WHERE type='table'")
@@ -118,24 +118,42 @@ test.describe('Notificurom Kanban Board', () => {
     sqlite.close();
   });
 
-  test('move card using chevron action button persists across reload via HMAC pointer', async ({
+  test('dragging card from repo text or title persists across reload via HMAC pointer', async ({
     page,
   }) => {
     await page.goto('/');
     await expect(page.getByText('Task Alpha')).toBeVisible();
 
     const alphaCard = page.locator('[data-testid="task-card"]', { hasText: 'Task Alpha' });
-    await alphaCard.hover();
+    const repoText = alphaCard.locator('[title*="owner/repo"]');
+    const nextColumn = page.locator('[data-testid="column-next"]');
+
+    const repoBox = await repoText.boundingBox();
+    const targetBox = await nextColumn.boundingBox();
+
+    expect(repoBox).not.toBeNull();
+    expect(targetBox).not.toBeNull();
 
     const patchPromise = page.waitForResponse(
       (res) => res.url().includes('/api/tasks/') && res.request().method() === 'PATCH'
     );
-    const moveForwardBtn = alphaCard.getByTitle('Move forward to next');
-    await moveForwardBtn.click();
-    await patchPromise;
 
-    const nextCol = page.locator('[data-testid="column-next"]');
-    await expect(nextCol.getByText('Task Alpha')).toBeVisible();
+    if (repoBox && targetBox) {
+      await page.mouse.move(
+        repoBox.x + repoBox.width / 2,
+        repoBox.y + repoBox.height / 2
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        targetBox.x + targetBox.width / 2,
+        targetBox.y + targetBox.height / 2,
+        { steps: 15 }
+      );
+      await page.mouse.up();
+    }
+
+    await patchPromise;
+    await expect(nextColumn.getByText('Task Alpha')).toBeVisible();
 
     await page.reload();
 

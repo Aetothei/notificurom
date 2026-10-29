@@ -1,24 +1,16 @@
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Task, TaskStatus } from '@/db/schema';
+import { Task } from '@/db/schema';
 import { AgeBadge } from './AgeBadge';
 import { StatBadge } from './StatBadge';
-import {
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
+import { ExternalLink, Trash2 } from 'lucide-react';
 
 interface TaskCardProps {
   task: Task;
-  onMoveColumn?: (taskId: string, targetStatus: TaskStatus) => void;
   onDelete?: (taskId: string) => void;
-  onFilterRepo?: (repo: string) => void;
   isOverlay?: boolean;
 }
-
-const STATUS_ORDER: TaskStatus[] = ['inbox', 'next', 'in_progress', 'waiting', 'done'];
 
 interface CardLabel {
   name: string;
@@ -34,9 +26,7 @@ interface CardMetadata {
 
 export function TaskCard({
   task,
-  onMoveColumn,
   onDelete,
-  onFilterRepo,
   isOverlay = false,
 }: TaskCardProps) {
   const {
@@ -73,9 +63,6 @@ export function TaskCard({
     metadata.number ||
     (task.sourceId.includes('#') ? task.sourceId.split('#')[1] : undefined);
 
-  const currentIndex = STATUS_ORDER.indexOf(task.status as TaskStatus);
-  const prevStatus = currentIndex > 0 ? STATUS_ORDER[currentIndex - 1] : null;
-  const nextStatus = currentIndex < STATUS_ORDER.length - 1 ? STATUS_ORDER[currentIndex + 1] : null;
   const isDone = task.status === 'done';
 
   // Split "org/repo" so we can render org muted and repo bright
@@ -90,7 +77,6 @@ export function TaskCard({
           icon="mdi:eye-outline"
           value="Review"
           variant="amber"
-          className="px-2 py-0.5 text-[11px]"
         />
       );
     }
@@ -100,7 +86,6 @@ export function TaskCard({
           icon="mdi:source-pull"
           value="PR"
           variant="blue"
-          className="px-2 py-0.5 text-[11px]"
         />
       );
     }
@@ -109,7 +94,6 @@ export function TaskCard({
         icon="mdi:record-circle-outline"
         value="Issue"
         variant="teal"
-        className="px-2 py-0.5 text-[11px]"
       />
     );
   };
@@ -130,93 +114,59 @@ export function TaskCard({
           : ''
       }`}
     >
-      {/* Top Row: Source Badge + Repo Name + Hover Quick Actions */}
-      <div className="flex items-center justify-between gap-1.5 min-w-0">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          {renderSourceBadge()}
-          {task.repository && (
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onFilterRepo?.(task.repository!);
-              }}
-              className="text-xs font-mono truncate hover:text-amber-300 transition-colors cursor-pointer text-left min-w-0 flex-1"
-              title={`Filter by ${task.repository}${issueNumber ? `#${issueNumber}` : ''}`}
-            >
-              {orgName && <span className="text-zinc-500">{orgName}/</span>}
-              <span className="text-zinc-300">{repoName}</span>
-              {issueNumber ? <span className="text-zinc-500">#{issueNumber}</span> : null}
-            </button>
-          )}
-        </div>
-
-        {/* Hover Quick Actions (Top-right overlay so footer never gets squeezed) */}
-        {!isOverlay && onMoveColumn && (
-          <div
-            className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1 shrink-0"
-            onPointerDown={(e) => e.stopPropagation()}
+      {/* Top Row: Source Badge + Repo Name (plain draggable text, full width) */}
+      <div className="flex items-center gap-2 min-w-0">
+        {renderSourceBadge()}
+        {task.repository && (
+          <span
+            className="text-xs font-mono truncate min-w-0 flex-1"
+            title={`${task.repository}${issueNumber ? `#${issueNumber}` : ''}`}
           >
-            {prevStatus && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMoveColumn(task.id, prevStatus);
-                }}
-                className="w-6 h-6 rounded-full bg-white/[0.08] hover:bg-amber-500/20 text-zinc-300 hover:text-amber-300 flex items-center justify-center transition-colors cursor-pointer"
-                title={`Move back to ${prevStatus}`}
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-            )}
-            {nextStatus && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMoveColumn(task.id, nextStatus);
-                }}
-                className="w-6 h-6 rounded-full bg-white/[0.08] hover:bg-amber-500/20 text-zinc-300 hover:text-amber-300 flex items-center justify-center transition-colors cursor-pointer"
-                title={`Move forward to ${nextStatus}`}
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            )}
-            {onDelete && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(task.id);
-                }}
-                className="w-6 h-6 rounded-full bg-white/[0.08] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 flex items-center justify-center transition-colors cursor-pointer"
-                title="Remove from board"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+            {orgName && <span className="text-zinc-500">{orgName}/</span>}
+            <span className="text-zinc-300">{repoName}</span>
+            {issueNumber ? <span className="text-zinc-500">#{issueNumber}</span> : null}
+          </span>
         )}
       </div>
 
-      {/* Card Title (clickable to open in GitHub, draggable anywhere) */}
-      {task.url ? (
-        <a
-          href={task.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="text-sm font-semibold leading-snug tracking-tight line-clamp-3 text-zinc-100 hover:text-amber-300 transition-colors w-fit"
+      {/* Hover Actions: Only Open in GitHub + Remove */}
+      {!isOverlay && (task.url || onDelete) && (
+        <div
+          className="absolute top-3 right-3 hidden group-hover:flex items-center gap-1 p-0.5 rounded-full bg-[#14151e]/90 backdrop-blur-xl shadow-lg z-10"
+          onPointerDown={(e) => e.stopPropagation()}
         >
-          {task.title}
-        </a>
-      ) : (
-        <div className="text-sm font-semibold leading-snug tracking-tight line-clamp-3 text-zinc-100">
-          {task.title}
+          {task.url && (
+            <a
+              href={task.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="w-6 h-6 rounded-full bg-white/[0.06] hover:bg-amber-500/20 text-zinc-300 hover:text-amber-300 flex items-center justify-center transition-colors cursor-pointer"
+              title="Open in GitHub"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(task.id);
+              }}
+              className="w-6 h-6 rounded-full bg-white/[0.06] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 flex items-center justify-center transition-colors cursor-pointer"
+              title="Remove from board"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
+
+      {/* Card Title (plain draggable text) */}
+      <div className="text-sm font-semibold leading-snug tracking-tight line-clamp-3 text-zinc-100">
+        {task.title}
+      </div>
 
       {/* Labels / Tags */}
       {Array.isArray(metadata.labels) && metadata.labels.length > 0 && (
@@ -224,7 +174,7 @@ export function TaskCard({
           {metadata.labels.slice(0, 3).map((l: CardLabel, idx: number) => (
             <span
               key={idx}
-              className="text-[10px] px-2.5 py-0.5 rounded-full font-mono font-medium truncate max-w-[120px] bg-white/[0.06] text-zinc-300"
+              className="inline-flex items-center h-5 text-[10px] px-2.5 rounded-full font-mono font-medium truncate max-w-[120px] bg-white/[0.06] text-zinc-300 leading-none"
               title={l.description || l.name}
             >
               {l.name}

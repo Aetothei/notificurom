@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <radialGradient id="bgGlow" cx="32" cy="24" r="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.28" />
+      <stop offset="100%" stop-color="#0c0d12" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="amberGrad" x1="16" y1="14" x2="48" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fcd34d" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle Dark Glass Base -->
+  <rect width="64" height="64" rx="18" fill="#0c0d12" />
+  <rect width="64" height="64" rx="18" fill="url(#bgGlow)" />
+  <rect x="1" y="1" width="62" height="62" rx="17" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2" />
+
+  <!-- Bell Outline (matching mdi:bell-badge-outline) -->
+  <path
+    d="M32 14C24.27 14 18 20.27 18 28V37L14 41V43H50V41L46 37V29"
+    stroke="url(#amberGrad)"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- Bell Clapper -->
+  <path
+    d="M27.5 47C28.3 49.3 30 51 32 51C34 51 35.7 49.3 36.5 47"
+    stroke="url(#amberGrad)"
+    stroke-width="4"
+    stroke-linecap="round"
+  />
+
+  <!-- Notification Badge Dot -->
+  <circle cx="45" cy="19" r="7" fill="#f59e0b" stroke="#0c0d12" stroke-width="3" />
+  <circle cx="45" cy="19" r="3.5" fill="#fef3c7" />
+</svg>

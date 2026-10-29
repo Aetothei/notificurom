@@ -15,7 +15,6 @@
   hosts: notificurom
   vars:
     notificurom_port: 3000
-    notificurom_data_dir: "/var/lib/notificurom"
     notificurom_app_dir: "/opt/notificurom"
   tasks:
     - name: Install Docker prerequisites
@@ -55,14 +54,11 @@
         state: started
         enabled: yes
 
-    - name: Ensure data and app directories exist
+    - name: Ensure app directory exists
       ansible.builtin.file:
-        path: "{{ item }}"
+        path: "{{ notificurom_app_dir }}"
         state: directory
         mode: "0755"
-      loop:
-        - "{{ notificurom_data_dir }}"
-        - "{{ notificurom_app_dir }}"
 
     - name: Create tarball of application on runner
       community.general.archive:
@@ -78,12 +74,22 @@
           - "{{ playbook_dir }}/drizzle.config.ts"
           - "{{ playbook_dir }}/drizzle"
           - "{{ playbook_dir }}/Dockerfile"
+          - "{{ playbook_dir }}/.dockerignore"
           - "{{ playbook_dir }}/docker-compose.yml"
           - "{{ playbook_dir }}/tsconfig.json"
           - "{{ playbook_dir }}/eslint.config.mjs"
         dest: "/tmp/notificurom_app.tar.gz"
         format: gz
       delegate_to: localhost
+
+    - name: Clean up obsolete Next.js files in container before extract
+      ansible.builtin.file:
+        path: "{{ notificurom_app_dir }}/{{ item }}"
+        state: absent
+      loop:
+        - postcss.config.mjs
+        - next.config.ts
+        - .next
 
     - name: Extract application files into container
       ansible.builtin.unarchive:
@@ -92,14 +98,11 @@
 
     - name: Ensure data directory exists with ownership for nextjs user
       ansible.builtin.file:
-        path: "{{ item }}"
+        path: "{{ notificurom_app_dir }}/data"
         state: directory
         owner: "1001"
         group: "1001"
         mode: "0775"
-      loop:
-        - "{{ notificurom_data_dir }}"
-        - "{{ notificurom_app_dir }}/data"
 
     - name: Configure .env for Docker Compose
       ansible.builtin.copy:
