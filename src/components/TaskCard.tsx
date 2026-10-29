@@ -1,26 +1,21 @@
-'use client';
-
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Task, TaskStatus } from '@/db/schema';
 import { AgeBadge } from './AgeBadge';
-import { useMounted } from '@/lib/date-utils';
+import { StatBadge } from './StatBadge';
 import {
   ExternalLink,
-  GitPullRequest,
-  CircleDot,
-  Eye,
   Trash2,
   ChevronLeft,
   ChevronRight,
-  GripVertical,
 } from 'lucide-react';
 
 interface TaskCardProps {
   task: Task;
   onMoveColumn?: (taskId: string, targetStatus: TaskStatus) => void;
   onDelete?: (taskId: string) => void;
+  onFilterRepo?: (repo: string) => void;
   isOverlay?: boolean;
 }
 
@@ -33,12 +28,18 @@ interface CardLabel {
 }
 
 interface CardMetadata {
+  number?: number;
   labels?: CardLabel[];
   [key: string]: unknown;
 }
 
-export function TaskCard({ task, onMoveColumn, onDelete, isOverlay = false }: TaskCardProps) {
-  const mounted = useMounted();
+export function TaskCard({
+  task,
+  onMoveColumn,
+  onDelete,
+  onFilterRepo,
+  isOverlay = false,
+}: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -52,7 +53,7 @@ export function TaskCard({ task, onMoveColumn, onDelete, isOverlay = false }: Ta
       type: 'Task',
       task,
     },
-    disabled: !mounted || isOverlay,
+    disabled: isOverlay,
   });
 
   const style = {
@@ -60,7 +61,6 @@ export function TaskCard({ task, onMoveColumn, onDelete, isOverlay = false }: Ta
     transition,
   };
 
-  // Parse metadata
   let metadata: CardMetadata = {};
   try {
     if (task.metadata) {
@@ -70,39 +70,42 @@ export function TaskCard({ task, onMoveColumn, onDelete, isOverlay = false }: Ta
     metadata = {};
   }
 
+  const issueNumber =
+    metadata.number ||
+    (task.sourceId.includes('#') ? task.sourceId.split('#')[1] : undefined);
+
   const currentIndex = STATUS_ORDER.indexOf(task.status as TaskStatus);
   const prevStatus = currentIndex > 0 ? STATUS_ORDER[currentIndex - 1] : null;
   const nextStatus = currentIndex < STATUS_ORDER.length - 1 ? STATUS_ORDER[currentIndex + 1] : null;
 
-  const renderSourceIcon = () => {
+  const renderSourceBadge = () => {
     if (task.sourceType === 'review_request') {
       return (
-        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-800/50">
-          <Eye className="w-3 h-3" />
-          <span>Review Request</span>
-        </span>
+        <StatBadge
+          icon="mdi:eye-outline"
+          value="Review"
+          variant="amber"
+          className="px-2.5 py-0.5 text-[11px]"
+        />
       );
     }
     if (task.sourceType === 'pr') {
       return (
-        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/50">
-          <GitPullRequest className="w-3 h-3" />
-          <span>PR</span>
-        </span>
-      );
-    }
-    if (task.sourceType === 'issue') {
-      return (
-        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/50">
-          <CircleDot className="w-3 h-3" />
-          <span>Issue</span>
-        </span>
+        <StatBadge
+          icon="mdi:source-pull"
+          value="PR"
+          variant="blue"
+          className="px-2.5 py-0.5 text-[11px]"
+        />
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
-        <span>Task</span>
-      </span>
+      <StatBadge
+        icon="mdi:record-circle-outline"
+        value="Issue"
+        variant="teal"
+        className="px-2.5 py-0.5 text-[11px]"
+      />
     );
   };
 
@@ -110,70 +113,80 @@ export function TaskCard({ task, onMoveColumn, onDelete, isOverlay = false }: Ta
     <div
       ref={setNodeRef}
       style={style}
+      {...attributes}
+      {...listeners}
       data-task-id={task.id}
       data-testid="task-card"
-      className={`group relative bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 rounded-lg p-3.5 shadow-sm transition-all text-zinc-100 flex flex-col gap-2.5 select-none ${
-        isDragging ? 'opacity-30 border-dashed border-indigo-500' : ''
-      } ${isOverlay ? 'shadow-2xl ring-2 ring-indigo-500/80 rotate-1 scale-102 bg-zinc-900 z-50 cursor-grabbing' : ''}`}
+      className={`group relative rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] backdrop-blur-xl p-4 transition-all duration-200 text-zinc-100 flex flex-col gap-3 select-none cursor-grab active:cursor-grabbing ${
+        isDragging ? 'opacity-30' : ''
+      } ${
+        isOverlay
+          ? 'shadow-[0_16px_40px_rgba(0,0,0,0.65)] bg-[#161822]/95 z-50 cursor-grabbing scale-[1.02]'
+          : ''
+      }`}
     >
-      {/* Card Header: Source / Type Badge + Repo + External Link */}
+      {/* Card Header: Source Pill + Repo#Number + Open Link */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 overflow-hidden flex-wrap">
-          {renderSourceIcon()}
+        <div className="flex items-center gap-2 overflow-hidden flex-wrap min-w-0">
+          {renderSourceBadge()}
           {task.repository && (
-            <span
-              className="text-xs font-mono text-zinc-400 truncate max-w-[150px]"
-              title={task.repository}
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onFilterRepo?.(task.repository!);
+              }}
+              className="text-xs font-mono text-zinc-400 hover:text-amber-300 truncate max-w-[180px] transition-colors cursor-pointer text-left"
+              title={`Filter by ${task.repository}`}
             >
               {task.repository}
-            </span>
+              {issueNumber ? <span className="text-zinc-500">#{issueNumber}</span> : null}
+            </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           {task.url && (
             <a
               href={task.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-1 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
-              title="Open in GitHub"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
+              className="w-7 h-7 rounded-full bg-white/[0.04] hover:bg-white/[0.1] text-zinc-400 hover:text-amber-300 flex items-center justify-center transition-colors cursor-pointer"
+              title="Open in GitHub"
             >
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           )}
-          {!isOverlay && (
-            <div
-              {...attributes}
-              {...listeners}
-              className="p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 cursor-grab active:cursor-grabbing transition-colors"
-              title="Drag to reorder or move column"
-            >
-              <GripVertical className="w-3.5 h-3.5" />
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Card Title */}
-      <div className="text-sm font-medium leading-snug line-clamp-3 text-zinc-100">
-        {task.title}
-      </div>
+      {/* Card Title (clickable to open in GitHub, draggable anywhere) */}
+      {task.url ? (
+        <a
+          href={task.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-sm font-semibold leading-snug tracking-tight line-clamp-3 text-zinc-100 hover:text-amber-300 transition-colors w-fit"
+        >
+          {task.title}
+        </a>
+      ) : (
+        <div className="text-sm font-semibold leading-snug tracking-tight line-clamp-3 text-zinc-100">
+          {task.title}
+        </div>
+      )}
 
-      {/* Labels / Tags if available */}
+      {/* Labels / Tags */}
       {Array.isArray(metadata.labels) && metadata.labels.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap">
           {metadata.labels.slice(0, 3).map((l: CardLabel, idx: number) => (
             <span
               key={idx}
-              className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium truncate max-w-[120px]"
-              style={{
-                backgroundColor: l.color ? `#${l.color}22` : '#27272a',
-                color: l.color ? `#${l.color}` : '#a1a1aa',
-                borderColor: l.color ? `#${l.color}44` : '#3f3f46',
-                borderWidth: '1px',
-              }}
+              className="text-[10px] px-2.5 py-0.5 rounded-full font-mono font-medium truncate max-w-[120px] bg-white/[0.06] text-zinc-300"
               title={l.description || l.name}
             >
               {l.name}
@@ -187,29 +200,28 @@ export function TaskCard({ task, onMoveColumn, onDelete, isOverlay = false }: Ta
         </div>
       )}
 
-      {/* Card Footer: Age Badge + Author Avatar + Quick Actions */}
-      <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-800/60 mt-0.5">
+      {/* Card Footer: Age Badge + Author + Quick Move Buttons */}
+      <div className="flex items-center justify-between gap-2 pt-1">
         <AgeBadge
           sourceCreatedAt={task.sourceCreatedAt}
           statusUpdatedAt={task.statusUpdatedAt}
           isDone={task.status === 'done'}
         />
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           {task.author && (
             <div
               className="flex items-center gap-1.5 text-xs text-zinc-400 font-mono"
               title={`Author: ${task.author}`}
             >
               {task.authorAvatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={task.authorAvatarUrl}
                   alt={task.author}
                   className="w-4 h-4 rounded-full"
                 />
               ) : (
-                <span className="w-4 h-4 rounded-full bg-zinc-800 flex items-center justify-center text-[10px]">
+                <span className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[10px]">
                   {task.author.charAt(0).toUpperCase()}
                 </span>
               )}
@@ -217,14 +229,19 @@ export function TaskCard({ task, onMoveColumn, onDelete, isOverlay = false }: Ta
             </div>
           )}
 
-          {/* Quick column movement buttons */}
           {!isOverlay && onMoveColumn && (
-            <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity ml-1">
+            <div
+              className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity ml-1 gap-1"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               {prevStatus && (
                 <button
                   type="button"
-                  onClick={() => onMoveColumn(task.id, prevStatus)}
-                  className="p-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveColumn(task.id, prevStatus);
+                  }}
+                  className="w-6 h-6 rounded-full bg-white/[0.06] hover:bg-amber-500/20 text-zinc-400 hover:text-amber-300 flex items-center justify-center transition-colors cursor-pointer"
                   title={`Move back to ${prevStatus}`}
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -233,8 +250,11 @@ export function TaskCard({ task, onMoveColumn, onDelete, isOverlay = false }: Ta
               {nextStatus && (
                 <button
                   type="button"
-                  onClick={() => onMoveColumn(task.id, nextStatus)}
-                  className="p-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMoveColumn(task.id, nextStatus);
+                  }}
+                  className="w-6 h-6 rounded-full bg-white/[0.06] hover:bg-amber-500/20 text-zinc-400 hover:text-amber-300 flex items-center justify-center transition-colors cursor-pointer"
                   title={`Move forward to ${nextStatus}`}
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -243,8 +263,11 @@ export function TaskCard({ task, onMoveColumn, onDelete, isOverlay = false }: Ta
               {onDelete && (
                 <button
                   type="button"
-                  onClick={() => onDelete(task.id)}
-                  className="p-1 text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 rounded transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(task.id);
+                  }}
+                  className="w-6 h-6 rounded-full bg-white/[0.06] hover:bg-rose-500/20 text-zinc-500 hover:text-rose-300 flex items-center justify-center transition-colors cursor-pointer"
                   title="Remove from board"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

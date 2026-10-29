@@ -1,12 +1,9 @@
-'use client';
-
 import React, { useRef, useEffect, useState } from 'react';
+import { Icon } from '@iconify/react';
 import {
   RotateCw,
   Settings,
-  Plus,
   Search,
-  CheckSquare,
   X,
   FilterX,
   Check,
@@ -14,14 +11,14 @@ import {
   LogOut,
   ChevronDown,
 } from 'lucide-react';
-import { formatRelativeShort, useMounted } from '@/lib/date-utils';
+import { formatRelativeShort } from '@/lib/date-utils';
+import { StatBadge } from './StatBadge';
 
 export interface UserSessionInfo {
   id?: string;
   login: string;
   name?: string | null;
   avatarUrl?: string | null;
-  email?: string | null;
 }
 
 interface NavbarProps {
@@ -35,12 +32,18 @@ interface NavbarProps {
   onSourceFilterChange: (value: string) => void;
   onClearFilters: () => void;
   onOpenSettings: () => void;
-  onOpenNewTask: () => void;
   totalTaskCount: number;
   isConnected: boolean;
   isConfigured: boolean;
   user: UserSessionInfo | null;
 }
+
+const FILTER_PILLS: Array<{ id: string; label: string; icon: string }> = [
+  { id: 'all', label: 'All', icon: 'mdi:view-grid-outline' },
+  { id: 'github_pr', label: 'PRs', icon: 'mdi:source-pull' },
+  { id: 'review_request', label: 'Reviews', icon: 'mdi:eye-outline' },
+  { id: 'github_issue', label: 'Issues', icon: 'mdi:record-circle-outline' },
+];
 
 export function Navbar({
   onSync,
@@ -53,19 +56,16 @@ export function Navbar({
   onSourceFilterChange,
   onClearFilters,
   onOpenSettings,
-  onOpenNewTask,
   totalTaskCount,
   isConnected,
   isConfigured,
   user,
 }: NavbarProps) {
-  const mounted = useMounted();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
 
-  // Update sync freshness label periodically (every 30 seconds)
   useEffect(() => {
     const timer = setInterval(() => {
       setTick((t) => t + 1);
@@ -73,7 +73,6 @@ export function Navbar({
     return () => clearInterval(timer);
   }, []);
 
-  // Close dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -84,7 +83,6 @@ export function Navbar({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Keyboard shortcut: '/' to focus search, 'Escape' to clear
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -98,33 +96,40 @@ export function Navbar({
       if (e.key === '/' && !isInput) {
         e.preventDefault();
         searchInputRef.current?.focus();
-      } else if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
-        if (searchFilter) {
-          onSearchChange('');
-        } else {
-          searchInputRef.current?.blur();
+      } else if (e.key === 'r' && !isInput && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        onSync();
+      } else if (e.key === 'Escape') {
+        if (document.activeElement === searchInputRef.current) {
+          if (searchFilter) {
+            onSearchChange('');
+          } else {
+            searchInputRef.current?.blur();
+          }
+        } else if (searchFilter || sourceFilter !== 'all') {
+          onClearFilters();
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchFilter, onSearchChange]);
+  }, [searchFilter, sourceFilter, onSearchChange, onClearFilters, onSync]);
 
   const hasActiveFilters = Boolean(searchFilter.trim()) || sourceFilter !== 'all';
 
   const formatLastSyncText = () => {
-    if (!mounted || !lastSyncTime) return 'Sync from GitHub';
+    if (!lastSyncTime) return 'Sync from GitHub (r)';
     try {
       const relTime = formatRelativeShort(lastSyncTime);
       const exactTime = new Date(lastSyncTime).toLocaleTimeString();
-      return `Last synced ${relTime} ago (${exactTime})`;
+      return `Last synced ${relTime} ago (${exactTime}) • Press 'r' to sync`;
     } catch {
-      return 'Sync from GitHub';
+      return 'Sync from GitHub (r)';
     }
   };
 
-  const syncFreshnessLabel = mounted && lastSyncTime ? `Synced ${formatRelativeShort(lastSyncTime)} ago` : null;
+  const syncFreshnessLabel = lastSyncTime ? `Synced ${formatRelativeShort(lastSyncTime)} ago` : null;
 
   const handleLogout = async () => {
     try {
@@ -136,42 +141,34 @@ export function Navbar({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/80 px-4 py-2.5">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 max-w-[1920px] mx-auto">
-        {/* Left: Branding & Counts */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/20">
-              <CheckSquare className="w-4 h-4 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-base text-zinc-100 tracking-tight">
-                  Notificurom
-                </span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-semibold uppercase">
-                  GTD
-                </span>
-              </div>
-            </div>
+    <header className="w-full pb-2">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Left: Brand Title & Active Count */}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+            <Icon icon="mdi:source-pull" className="w-5 h-5" />
           </div>
-
-          <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-zinc-800 text-xs text-zinc-400 font-mono">
-            <span>{totalTaskCount} active</span>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-lg font-bold tracking-tight text-zinc-100">Notificurom</h1>
+            <StatBadge
+              value={`${totalTaskCount} active`}
+              variant="amber"
+              className="px-2.5 py-0.5 text-[11px]"
+            />
           </div>
         </div>
 
-        {/* Center: Search & Filter */}
-        <div className="flex items-center gap-2 flex-1 max-w-2xl">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+        {/* Center: Borderless Search Pill + Glass Filter Capsule */}
+        <div className="flex flex-wrap items-center gap-2.5 flex-1 max-w-3xl">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Filter tasks by title, repo, or author... (/)"
               value={searchFilter}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 pr-8 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              className="w-full rounded-full bg-white/[0.04] hover:bg-white/[0.07] focus:bg-white/[0.08] backdrop-blur-xl pl-10 pr-9 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none transition-all"
             />
             {searchFilter && (
               <button
@@ -180,7 +177,7 @@ export function Navbar({
                   onSearchChange('');
                   searchInputRef.current?.focus();
                 }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-0.5 rounded hover:bg-zinc-800 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-0.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
                 title="Clear search text (Esc)"
               >
                 <X className="w-3.5 h-3.5" />
@@ -188,63 +185,77 @@ export function Navbar({
             )}
           </div>
 
-          <div className="relative shrink-0">
-            <select
-              value={sourceFilter}
-              onChange={(e) => onSourceFilterChange(e.target.value)}
-              className="bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-            >
-              <option value="all">All Items</option>
-              <option value="github_pr">PRs Only</option>
-              <option value="review_request">Review Requests</option>
-              <option value="github_issue">Issues Only</option>
-            </select>
+          {/* Borderless Inline Glass Filter Capsule */}
+          <div
+            role="group"
+            aria-label="Filter by source"
+            className="flex items-center gap-1 p-1 rounded-full bg-white/[0.04] backdrop-blur-xl shrink-0"
+          >
+            {FILTER_PILLS.map((pill) => {
+              const isActive = sourceFilter === pill.id;
+              return (
+                <button
+                  key={pill.id}
+                  type="button"
+                  data-filter-id={pill.id}
+                  onClick={() => onSourceFilterChange(pill.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <Icon icon={pill.icon} className="w-3.5 h-3.5" />
+                  <span>{pill.label}</span>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Clear All Filters Button */}
           {hasActiveFilters && (
             <button
               type="button"
               onClick={onClearFilters}
-              className="flex items-center gap-1 px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-zinc-100 border border-zinc-700/80 rounded-lg text-xs font-medium transition-colors shrink-0 animate-in fade-in duration-150"
-              title="Reset search and filters"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-medium transition-all shrink-0 cursor-pointer"
+              title="Reset search and filters (Esc)"
             >
-              <FilterX className="w-3.5 h-3.5 text-zinc-400" />
+              <FilterX className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Clear</span>
             </button>
           )}
         </div>
 
-        {/* Right: Actions (Sync, Connect/User, Add, Settings) */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Right: User Pill, Sync Pill, Circular Settings Button */}
+        <div className="flex items-center gap-2.5 shrink-0">
           {isConnected && user ? (
             <div className="relative" ref={dropdownRef}>
               <button
                 type="button"
                 onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-mono text-zinc-300 hover:border-zinc-700 hover:bg-zinc-800 transition-colors"
-                title={`Connected as @${user.login}${user.name ? ` (${user.name})` : ''}`}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-white/[0.04] hover:bg-white/[0.07] backdrop-blur-xl text-xs font-mono text-zinc-200 transition-all cursor-pointer"
+                title={`Connected as @${user.login}`}
               >
                 {user.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={user.avatarUrl}
                     alt={user.login}
-                    className="w-4 h-4 rounded-full ring-1 ring-zinc-700"
+                    className="w-4 h-4 rounded-full"
                   />
                 ) : (
-                  <span className="w-4 h-4 rounded-full bg-indigo-600 text-[10px] text-white flex items-center justify-center font-bold">
+                  <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 text-[10px] flex items-center justify-center font-bold">
                     {user.login.charAt(0).toUpperCase()}
                   </span>
                 )}
-                <span className="hidden sm:inline font-medium text-zinc-200">@{user.login}</span>
-                <ChevronDown className="w-3 h-3 text-zinc-500 ml-0.5" />
+                <span className="hidden sm:inline font-semibold">@{user.login}</span>
+                <ChevronDown className="w-3 h-3 text-zinc-400" />
               </button>
 
               {userDropdownOpen && (
-                <div className="absolute right-0 mt-1.5 w-48 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl py-1 text-xs z-50 animate-in fade-in zoom-in-95 duration-100">
-                  <div className="px-3 py-2 border-b border-zinc-800">
-                    <div className="font-semibold text-zinc-100 truncate">{user.name || user.login}</div>
+                <div className="absolute right-0 mt-2 w-48 bg-[#14151e]/95 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.65)] backdrop-blur-2xl py-1.5 text-xs z-50">
+                  <div className="px-3.5 py-2">
+                    <div className="font-semibold text-zinc-100 truncate">
+                      {user.name || user.login}
+                    </div>
                     <div className="text-[11px] text-zinc-400 truncate">@{user.login}</div>
                   </div>
                   <button
@@ -253,15 +264,15 @@ export function Navbar({
                       setUserDropdownOpen(false);
                       onOpenSettings();
                     }}
-                    className="w-full text-left px-3 py-2 hover:bg-zinc-800 flex items-center gap-2 text-zinc-300 hover:text-zinc-100 transition-colors"
+                    className="w-full text-left px-3.5 py-2 hover:bg-white/[0.06] flex items-center gap-2 text-zinc-300 hover:text-zinc-100 transition-colors cursor-pointer"
                   >
-                    <Settings className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Settings & Queries</span>
+                    <Settings className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Settings</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="w-full text-left px-3 py-2 hover:bg-rose-950/40 text-rose-300 flex items-center gap-2 transition-colors border-t border-zinc-800/60"
+                    className="w-full text-left px-3.5 py-2 hover:bg-rose-500/15 text-rose-300 flex items-center gap-2 transition-colors cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     <span>Log Out</span>
@@ -272,28 +283,17 @@ export function Navbar({
           ) : isConfigured ? (
             <a
               href="/api/auth/github/login"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-700/60 hover:border-indigo-600 text-indigo-200 rounded-lg text-xs font-medium transition-colors"
-              title="Connect GitHub Account"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold transition-all"
             >
-              <LogIn className="w-3.5 h-3.5 text-indigo-400" />
+              <LogIn className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Connect GitHub</span>
             </a>
-          ) : (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-700/60 hover:border-indigo-600 text-indigo-200 rounded-lg text-xs font-medium transition-colors"
-              title="Configure and Connect GitHub"
-            >
-              <LogIn className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden sm:inline">Connect GitHub</span>
-            </button>
-          )}
+          ) : null}
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             {syncFreshnessLabel && (
               <span
-                className="hidden lg:inline text-[11px] text-zinc-400 font-mono select-none mr-1"
+                className="hidden xl:inline text-[11px] text-zinc-400 font-mono select-none"
                 title={formatLastSyncText()}
               >
                 {syncFreshnessLabel}
@@ -303,40 +303,29 @@ export function Navbar({
               type="button"
               onClick={onSync}
               disabled={isSyncing}
-              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-all duration-200 disabled:opacity-60 ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold backdrop-blur-xl transition-all duration-200 disabled:opacity-60 cursor-pointer ${
                 justSynced
-                  ? 'bg-emerald-950/60 border-emerald-600/70 text-emerald-300 shadow-sm shadow-emerald-950'
-                  : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-200'
+                  ? 'bg-emerald-500/15 text-emerald-300'
+                  : 'bg-white/[0.04] hover:bg-amber-500/20 hover:text-amber-300 text-zinc-200'
               }`}
               title={formatLastSyncText()}
             >
               {isSyncing ? (
-                <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                <RotateCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
               ) : justSynced ? (
                 <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[2.5]" />
               ) : (
-                <RotateCw className="w-3.5 h-3.5 text-zinc-400 group-hover:text-zinc-200" />
+                <RotateCw className="w-3.5 h-3.5 text-amber-400" />
               )}
-              <span>
-                {isSyncing ? 'Syncing...' : justSynced ? 'Synced!' : 'Sync'}
-              </span>
+              <span>{isSyncing ? 'Syncing...' : justSynced ? 'Synced!' : 'Sync'}</span>
             </button>
           </div>
 
           <button
             type="button"
-            onClick={onOpenNewTask}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium shadow-sm transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">New Task</span>
-          </button>
-
-          <button
-            type="button"
             onClick={onOpenSettings}
-            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg border border-zinc-800/80 transition-colors"
-            title="Configure Settings & Integrations"
+            className="w-9 h-9 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-amber-300 flex items-center justify-center transition-colors cursor-pointer"
+            title="Settings"
           >
             <Settings className="w-4 h-4" />
           </button>

@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   DndContext,
@@ -23,6 +21,7 @@ interface KanbanBoardProps {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   searchFilter: string;
   sourceFilter: string;
+  onSearchChange?: (value: string) => void;
   onClearFilters?: () => void;
 }
 
@@ -39,29 +38,33 @@ export function KanbanBoard({
   setTasks,
   searchFilter,
   sourceFilter,
+  onSearchChange,
   onClearFilters,
 }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
-  const updateServerTask = useCallback(async (taskId: string, status?: TaskStatus, sortOrder?: number) => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, sortOrder }),
-      });
-      if (!res.ok) {
-        console.error('Failed to update task on server, status code:', res.status);
+  const updateServerTask = useCallback(
+    async (taskId: string, status?: TaskStatus, sortOrder?: number) => {
+      try {
+        const res = await fetch(`/api/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status, sortOrder }),
+        });
+        if (!res.ok) {
+          console.error('Failed to update task on server, status code:', res.status);
+        }
+      } catch (err) {
+        console.error('Failed to sync task status with server', err);
       }
-    } catch (err) {
-      console.error('Failed to sync task status with server', err);
-    }
-  }, []);
+    },
+    []
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 5, // 5px movement required before drag starts to allow clicks
+        distance: 5, // 5px movement required before drag starts so clicks on links/buttons work naturally
       },
     }),
     useSensor(KeyboardSensor, {
@@ -70,16 +73,14 @@ export function KanbanBoard({
   );
 
   const handleMoveColumn = useCallback(
-    (taskId: string, targetStatus: TaskStatus) => {
+    async (taskId: string, targetStatus: TaskStatus) => {
       const now = new Date().toISOString();
       setTasks((prev) =>
         prev.map((t) =>
-          t.id === taskId
-            ? { ...t, status: targetStatus, statusUpdatedAt: now }
-            : t
+          t.id === taskId ? { ...t, status: targetStatus, statusUpdatedAt: now } : t
         )
       );
-      updateServerTask(taskId, targetStatus);
+      await updateServerTask(taskId, targetStatus);
     },
     [setTasks, updateServerTask]
   );
@@ -94,6 +95,18 @@ export function KanbanBoard({
       }
     },
     [setTasks]
+  );
+
+  const handleFilterRepo = useCallback(
+    (repo: string) => {
+      if (!onSearchChange) return;
+      if (searchFilter.trim().toLowerCase() === repo.toLowerCase()) {
+        onSearchChange('');
+      } else {
+        onSearchChange(repo);
+      }
+    },
+    [searchFilter, onSearchChange]
   );
 
   const onDragStart = (event: DragStartEvent) => {
@@ -134,7 +147,6 @@ export function KanbanBoard({
         return prev;
       }
 
-      // Over another task item
       const overIdx = prev.findIndex((t) => t.id === overId);
       if (overIdx === -1) return prev;
 
@@ -199,24 +211,20 @@ export function KanbanBoard({
         }
       }
 
-      // Find the index of the task within its destination column to assign sortOrder
       const columnTasks = nextTasks.filter((t) => t.status === finalStatus);
       const colIndex = columnTasks.findIndex((t) => t.id === activeId);
       const newSortOrder = colIndex >= 0 ? colIndex : 0;
 
-      // Update sortOrder on the object in local state
       nextTasks = nextTasks.map((t) =>
         t.id === activeId ? { ...t, sortOrder: newSortOrder } : t
       );
 
-      // Persist to server (status & sortOrder)
       updateServerTask(activeId, finalStatus, newSortOrder);
 
       return nextTasks;
     });
   };
 
-  // Filter tasks based on search & source filters
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
       if (sourceFilter !== 'all') {
@@ -246,7 +254,7 @@ export function KanbanBoard({
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
     >
-      <div className="flex gap-4 overflow-x-auto pb-4 pt-1 px-1 min-h-[calc(100vh-140px)] items-start">
+      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 pb-4 items-start">
         {COLUMNS.map((col) => {
           const colTasks = filteredTasks.filter((t) => t.status === col.id);
           return (
@@ -259,6 +267,7 @@ export function KanbanBoard({
               onClearFilters={onClearFilters}
               onMoveColumn={handleMoveColumn}
               onDeleteTask={handleDeleteTask}
+              onFilterRepo={handleFilterRepo}
             />
           );
         })}
@@ -266,7 +275,7 @@ export function KanbanBoard({
 
       <DragOverlay dropAnimation={null}>
         {activeTask ? (
-          <div className="w-[320px]">
+          <div className="w-[340px]">
             <TaskCard task={activeTask} isOverlay />
           </div>
         ) : null}

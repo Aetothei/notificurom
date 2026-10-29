@@ -1,14 +1,11 @@
-'use client';
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Task } from '@/db/schema';
 import { SyncResult } from '@/lib/types';
 import { Navbar, UserSessionInfo } from './Navbar';
 import { KanbanBoard } from './KanbanBoard';
 import { SettingsModal } from './SettingsModal';
-import { NewTaskModal } from './NewTaskModal';
-import { AlertCircle, CheckCircle2, LogIn, Settings, RotateCw } from 'lucide-react';
-import { GitHubIcon } from './GitHubIcon';
+import { THEME } from '@/config/theme';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface DashboardProps {
   initialTasks: Task[];
@@ -17,7 +14,6 @@ interface DashboardProps {
   initialUser: UserSessionInfo | null;
   initialLastSync: string | null;
   initialBanner?: { type: 'info' | 'success' | 'error'; message: string } | null;
-  initialSyncing?: boolean;
 }
 
 export function Dashboard({
@@ -27,21 +23,21 @@ export function Dashboard({
   initialUser,
   initialLastSync,
   initialBanner = null,
-  initialSyncing = false,
 }: DashboardProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [isConnected, setIsConnected] = useState(initialIsConnected);
   const [isConfigured, setIsConfigured] = useState(initialIsConfigured);
   const [user, setUser] = useState<UserSessionInfo | null>(initialUser);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(initialLastSync);
+  const [syncIntervalMins, setSyncIntervalMins] = useState(15);
   const [isSyncing, setIsSyncing] = useState(false);
   const [justSynced, setJustSynced] = useState(false);
-  const [isInitialSyncing, setIsInitialSyncing] = useState(initialSyncing);
   const [searchFilter, setSearchFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
-  const [banner, setBanner] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(initialBanner);
+  const [banner, setBanner] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(
+    initialBanner
+  );
 
   const handleClearFilters = useCallback(() => {
     setSearchFilter('');
@@ -51,9 +47,16 @@ export function Dashboard({
   const refreshTasks = useCallback(async () => {
     try {
       const res = await fetch('/api/tasks');
+      if (res.status === 401) {
+        window.location.replace('/');
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setTasks(data.tasks || []);
+        if (data.lastSyncTime) {
+          setLastSyncTime(data.lastSyncTime);
+        }
       }
     } catch (err) {
       console.error('Failed to reload tasks', err);
@@ -66,6 +69,11 @@ export function Dashboard({
       setBanner(null);
 
       const res = await fetch('/api/sync', { method: 'POST' });
+      if (res.status === 401) {
+        window.location.replace('/');
+        return;
+      }
+
       const data = await res.json();
 
       if (res.ok && data.success) {
@@ -83,20 +91,21 @@ export function Dashboard({
               `${githubRes.updated} updated`,
               `${githubRes.autoResolved} resolved`,
             ];
-            if (githubRes.removed && githubRes.removed > 0) {
-              parts.push(`${githubRes.removed} unassigned removed`);
-            }
             setBanner({
               type: 'success',
               message: `Synced with GitHub: ${parts.join(', ')}.`,
             });
-            setTimeout(() => setBanner(null), 5000);
+            setTimeout(() => setBanner(null), 4000);
+          }
+          if (githubRes.tasks) {
+            setTasks(githubRes.tasks);
+          } else {
+            await refreshTasks();
           }
         }
         setLastSyncTime(new Date().toISOString());
         setJustSynced(true);
         setTimeout(() => setJustSynced(false), 2500);
-        await refreshTasks();
       } else {
         setBanner({
           type: 'error',
@@ -113,147 +122,146 @@ export function Dashboard({
     }
   }, [refreshTasks]);
 
-  // Check auth and connection status
-  const checkSettings = useCallback(async () => {
+  const checkSettingsAndStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/auth/github/status');
       if (res.ok) {
         const data = await res.json();
-        setIsConnected(data.isConnected || false);
+        if (!data.isConnected) {
+          window.location.replace('/');
+          return;
+        }
+        setIsConnected(true);
         setIsConfigured(data.isConfigured || false);
         setUser(data.user || null);
+      }
+
+      const settingsRes = await fetch('/api/settings');
+      if (settingsRes.ok) {
+        const sData = await settingsRes.json();
+        if (typeof sData.syncIntervalMinutes === 'number') {
+          setSyncIntervalMins(sData.syncIntervalMinutes);
+        }
       }
     } catch {
       // ignore
     }
   }, []);
 
-  // Clean up URL query parameters if initial banner was shown
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.search) {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
 
-  // Short-interval polling on initial login while background sync finishes
   useEffect(() => {
-    if (!isInitialSyncing) return;
+    let isCancelled = false;
 
-    let attempts = 0;
-    const maxAttempts = 15; // 15 attempts * 2s = up to 30s
-
-    const checkInitialSync = async () => {
-      attempts++;
+    const check = async () => {
       try {
-        const res = await fetch('/api/tasks');
+        const res = await fetch('/api/auth/github/status');
         if (res.ok) {
           const data = await res.json();
-          const fetchedTasks = data.tasks || [];
-          if (fetchedTasks.length > 0 || attempts >= maxAttempts) {
-            setTasks(fetchedTasks);
-            setIsInitialSyncing(false);
-            setLastSyncTime(new Date().toISOString());
+          if (!data.isConnected) {
+            window.location.replace('/');
             return;
+          }
+          if (!isCancelled) {
+            setIsConnected(true);
+            setIsConfigured(data.isConfigured || false);
+            setUser(data.user || null);
+          }
+        }
+
+        const settingsRes = await fetch('/api/settings');
+        if (settingsRes.ok) {
+          const sData = await settingsRes.json();
+          if (!isCancelled && typeof sData.syncIntervalMinutes === 'number') {
+            setSyncIntervalMins(sData.syncIntervalMinutes);
           }
         }
       } catch {
-        // ignore errors during background poll
-      }
-
-      if (attempts >= maxAttempts) {
-        setIsInitialSyncing(false);
+        // ignore
       }
     };
 
-    const interval = setInterval(checkInitialSync, 2000);
-    return () => clearInterval(interval);
-  }, [isInitialSyncing]);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        check();
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibility);
 
-  // Setup periodic background polling if connected
+    check();
+
+    return () => {
+      isCancelled = true;
+      window.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
+
   useEffect(() => {
+    const intervalMs = Math.max(1, syncIntervalMins) * 60 * 1000;
     const interval = setInterval(() => {
       if (isConnected) {
         handleSync();
       }
-    }, 10 * 60 * 1000); // 10 minutes
+    }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [isConnected, handleSync]);
+  }, [isConnected, syncIntervalMins, handleSync]);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col selection:bg-indigo-500 selection:text-white">
-      <Navbar
-        onSync={handleSync}
-        isSyncing={isSyncing}
-        justSynced={justSynced}
-        lastSyncTime={lastSyncTime}
-        searchFilter={searchFilter}
-        onSearchChange={setSearchFilter}
-        sourceFilter={sourceFilter}
-        onSourceFilterChange={setSourceFilter}
-        onClearFilters={handleClearFilters}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenNewTask={() => setIsNewTaskOpen(true)}
-        totalTaskCount={tasks.filter((t) => t.status !== 'done').length}
-        isConnected={isConnected}
-        isConfigured={isConfigured}
-        user={user}
-      />
-
-      {/* Disconnected Banner */}
-      {!isConnected && (
-        <div className="bg-gradient-to-r from-indigo-950/80 to-purple-950/80 border-b border-indigo-800/50 px-4 py-3">
-          <div className="max-w-[1920px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-sm">
-            <div className="flex items-center gap-2.5 text-indigo-200">
-              <GitHubIcon className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span>
-                <strong>Connect your GitHub account</strong> to start automatically ingesting your assigned PRs, issues, and review requests.
-              </span>
-            </div>
-            {isConfigured ? (
-              <a
-                href="/api/auth/github/login"
-                className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors shadow-sm"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>Connect GitHub</span>
-              </a>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsSettingsOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors shadow-sm"
-              >
-                <Settings className="w-3.5 h-3.5" />
-                <span>Configure GitHub App</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Initial Sync Progress Banner */}
-      {isInitialSyncing && (
-        <div className="bg-indigo-950/70 border-b border-indigo-800/60 px-4 py-2.5 text-xs text-indigo-200">
-          <div className="max-w-[1920px] mx-auto flex items-center gap-2">
-            <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-400 shrink-0" />
-            <span>Setting up your board and syncing your GitHub tasks for the first time...</span>
-          </div>
-        </div>
-      )}
-
-      {/* Sync / Auth Status Banner */}
-      {banner && (
+    <div
+      className="relative min-h-screen w-full bg-[#0c0d12] text-zinc-100 overflow-x-hidden select-none font-sans"
+      style={{ backgroundColor: THEME.canvasBg }}
+    >
+      {/* 1. Ambient Glassmorphic Glow Blobs (matching ha-dashboard) */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <div
-          className={`px-4 py-2.5 border-b text-xs flex items-center justify-between transition-all ${
-            banner.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-800/60 text-emerald-300'
-              : banner.type === 'error'
-              ? 'bg-rose-950/60 border-rose-800/60 text-rose-300'
-              : 'bg-zinc-900 border-zinc-800 text-zinc-300'
-          }`}
-        >
-          <div className="max-w-[1920px] mx-auto flex items-center gap-2 w-full">
+          className={`absolute -top-32 -left-32 ${THEME.ambientBlobs.topLeft.size} ${THEME.ambientBlobs.topLeft.blur} rounded-full`}
+          style={{ backgroundColor: THEME.ambientBlobs.topLeft.color }}
+        />
+        <div
+          className={`absolute -bottom-32 -right-32 ${THEME.ambientBlobs.bottomRight.size} ${THEME.ambientBlobs.bottomRight.blur} rounded-full`}
+          style={{ backgroundColor: THEME.ambientBlobs.bottomRight.color }}
+        />
+        <div
+          className={`absolute -bottom-32 left-1/4 ${THEME.ambientBlobs.bottomLeft.size} ${THEME.ambientBlobs.bottomLeft.blur} rounded-full`}
+          style={{ backgroundColor: THEME.ambientBlobs.bottomLeft.color }}
+        />
+      </div>
+
+      {/* 2. Main Dashboard Container */}
+      <div className="relative z-10 w-full max-w-[1920px] mx-auto px-6 py-6 flex flex-col gap-5">
+        <Navbar
+          onSync={handleSync}
+          isSyncing={isSyncing}
+          justSynced={justSynced}
+          lastSyncTime={lastSyncTime}
+          searchFilter={searchFilter}
+          onSearchChange={setSearchFilter}
+          sourceFilter={sourceFilter}
+          onSourceFilterChange={setSourceFilter}
+          onClearFilters={handleClearFilters}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          totalTaskCount={tasks.filter((t) => t.status !== 'done').length}
+          isConnected={isConnected}
+          isConfigured={isConfigured}
+          user={user}
+        />
+
+        {/* Sync Status Banner */}
+        {banner && (
+          <div
+            className={`px-4 py-2.5 rounded-full backdrop-blur-xl text-xs flex items-center gap-2 ${
+              banner.type === 'success'
+                ? 'bg-emerald-500/15 text-emerald-300'
+                : banner.type === 'error'
+                ? 'bg-rose-500/15 text-rose-300'
+                : 'bg-white/[0.05] text-zinc-300'
+            }`}
+          >
             {banner.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 shrink-0" />
             ) : (
@@ -261,34 +269,29 @@ export function Dashboard({
             )}
             <span>{banner.message}</span>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Kanban Board Canvas */}
-      <main className="flex-1 p-4 max-w-[1920px] mx-auto w-full">
-        <KanbanBoard
-          tasks={tasks}
-          setTasks={setTasks}
-          searchFilter={searchFilter}
-          sourceFilter={sourceFilter}
-          onClearFilters={handleClearFilters}
-        />
-      </main>
+        {/* Kanban Board Canvas */}
+        <main className="flex-1 w-full">
+          <KanbanBoard
+            tasks={tasks}
+            setTasks={setTasks}
+            searchFilter={searchFilter}
+            sourceFilter={sourceFilter}
+            onSearchChange={setSearchFilter}
+            onClearFilters={handleClearFilters}
+          />
+        </main>
+      </div>
 
-      {/* Modals */}
+      {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onSaveSuccess={() => {
-          checkSettings();
-          handleSync();
+          checkSettingsAndStatus();
+          refreshTasks();
         }}
-      />
-
-      <NewTaskModal
-        isOpen={isNewTaskOpen}
-        onClose={() => setIsNewTaskOpen(false)}
-        onTaskCreated={refreshTasks}
       />
     </div>
   );
