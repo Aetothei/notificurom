@@ -21,6 +21,8 @@
 
 # production
 /build
+/dist
+opencode.json
 
 # misc
 .DS_Store
