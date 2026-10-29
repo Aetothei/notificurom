@@ -68,16 +68,18 @@
       community.general.archive:
         path:
           - "{{ playbook_dir }}/src"
+          - "{{ playbook_dir }}/server"
           - "{{ playbook_dir }}/public"
+          - "{{ playbook_dir }}/index.html"
+          - "{{ playbook_dir }}/vite.config.ts"
+          - "{{ playbook_dir }}/components.json"
           - "{{ playbook_dir }}/package.json"
           - "{{ playbook_dir }}/package-lock.json"
           - "{{ playbook_dir }}/drizzle.config.ts"
           - "{{ playbook_dir }}/drizzle"
           - "{{ playbook_dir }}/Dockerfile"
           - "{{ playbook_dir }}/docker-compose.yml"
-          - "{{ playbook_dir }}/next.config.ts"
           - "{{ playbook_dir }}/tsconfig.json"
-          - "{{ playbook_dir }}/postcss.config.mjs"
           - "{{ playbook_dir }}/eslint.config.mjs"
         dest: "/tmp/notificurom_app.tar.gz"
         format: gz
@@ -107,6 +109,9 @@
           APP_URL=https://{{ lookup('ansible.builtin.env', 'APP_DOMAIN') }}
           GITHUB_CLIENT_ID={{ lookup('ansible.builtin.env', 'GH_CLIENT_ID') | default('', true) }}
           GITHUB_CLIENT_SECRET={{ lookup('ansible.builtin.env', 'GH_CLIENT_SECRET') | default('', true) }}
+          SESSION_SECRET={{ lookup('ansible.builtin.env', 'SESSION_SECRET') | default('', true) }}
+          ALLOWED_GITHUB_USERS={{ lookup('ansible.builtin.env', 'ALLOWED_GITHUB_USERS') | default('', true) }}
+          GITHUB_OAUTH_SCOPES={{ lookup('ansible.builtin.env', 'GITHUB_OAUTH_SCOPES') | default('', true) }}
         mode: "0600"
 
     - name: Build and deploy Notificurom container via Docker Compose

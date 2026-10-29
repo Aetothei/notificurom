@@ -1,9 +1,9 @@
 name: Deploy Notificurom
 
 on:
-  push:
-    branches:
-      - main
+  release:
+    types: [published]
+  workflow_dispatch:
 
 jobs:
   ansible-deploy:
@@ -26,5 +26,7 @@ jobs:
           APP_DOMAIN: ${{ vars.APP_DOMAIN }}
           GH_CLIENT_ID: ${{ vars.GH_CLIENT_ID }}
           GH_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          ALLOWED_GITHUB_USERS: ${{ vars.ALLOWED_GITHUB_USERS }}
         run: |
           ansible-playbook -i inventory.yml playbook.yml
